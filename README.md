@@ -40,7 +40,9 @@ Aligned little-endian primitive integer lists use a safe validated native copy; 
 12KB mixed decode is 252.586ns versus libssz's 256.937ns in the same five-round batch.
 The provided `Ssz::fixed_sequence_bytes` hook now reuses the same safe native view for
 integer sequence encoding and Merkle packing. Mixed encode improved 3.16×, while Mixed root
-is within 1.05× of libssz; these hook laws remain unproved under #25.
+is within 1.05× of libssz; these hook laws remain unproved under #25. All-fixed derived
+containers additionally write fields without offset bookkeeping; Header encode fell from
+103.580ns to 45.854ns in the recorded five-round batches.
 
 ## Example
 

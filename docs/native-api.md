@@ -130,7 +130,7 @@ A deferred native overflow still becomes `SizeOverflow` only after later protoco
 Variable and progressive encoding retains `ContainerWriter`; variable decoding uses validated
 stack ranges. A width sum that overflows `usize` is `InvalidLength`, and inputs of at least four
 gigabytes remain `SizeOverflow`, both before any field decoder. Completed fields are dropped
-normally if a later field fails.
+normally if a later field fails. See [fixed container encode measurements](fixed-encode.md).
 
 `ByteVector<N>` for `N <= 32` stores those bytes inline. `from_bytes` therefore does not
 preserve the input allocation at those sizes. `N > 32` and every `ByteList` still move the
