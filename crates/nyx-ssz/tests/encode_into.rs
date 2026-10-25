@@ -41,6 +41,16 @@ fn should_write_exact_scalar_bytes_and_reject_wrong_sized_destinations() {
     check(U256::MAX, &[255; 32]);
 }
 
+#[cfg(target_endian = "little")]
+#[test]
+fn should_borrow_canonical_native_integer_sequence_bytes() {
+    let values = [0x0102_u16, 0x0304];
+    assert_eq!(
+        u16::fixed_sequence_bytes(&values),
+        Some([2, 1, 4, 3].as_slice())
+    );
+}
+
 #[test]
 fn should_write_owned_bytes_and_bits_without_temporary_encodings() {
     check(
@@ -120,6 +130,35 @@ fn should_write_derived_mixed_sparse_and_union_values_in_one_destination() {
     let mut expected = vec![127];
     expected.extend_from_slice(&wire);
     check(value, &expected);
+}
+
+#[derive(Debug)]
+struct BadSequenceBytes(u8);
+impl Ssz for BadSequenceBytes {
+    const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(1);
+    fn encoded_len(&self) -> Result<usize, CodecError> {
+        Ok(1)
+    }
+    fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
+        self.0.encode_into(output)
+    }
+    fn decode(input: &[u8]) -> Result<Self, CodecError> {
+        u8::decode(input).map(Self)
+    }
+    fn fixed_sequence_bytes(_values: &[Self]) -> Option<&[u8]> {
+        Some(&[])
+    }
+    fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
+        self.0.hash_tree_root()
+    }
+}
+
+#[test]
+fn should_reject_a_fixed_sequence_hook_with_the_wrong_byte_length() {
+    let value = list::<_, 1>(vec![BadSequenceBytes(7)]).unwrap();
+    assert_eq!(value.encoded_len(), Err(CodecError::InvalidLength));
+    assert_eq!(value.encode(), Err(CodecError::InvalidLength));
+    assert_eq!(value.hash_tree_root(), Err(CodecError::InvalidLength));
 }
 
 // A concrete all-zero byte vector represented by length, not allocated storage.

@@ -134,6 +134,20 @@ accepted `Vec`. Decode of an inline vector performs no allocation. These layout 
 native-tested and remain under the unproved codec backlog in
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25).
 
+## Fixed-sequence byte hook
+
+`Ssz::fixed_sequence_bytes(values)` is a provided optimization hook. The default returns
+`None`, so existing manual implementations keep element-wise validation and encoding.
+On little-endian targets, u8 through u128 return a borrowed canonical byte view through
+safe `bytemuck::cast_slice`; boolean, U256 and big-endian targets keep the scalar path.
+
+Parents verify that a returned view matches the declared fixed width and element count.
+Encoding copies the complete view once, while basic collection roots split it directly into
+32-byte Merkle chunks. No borrowed bytes escape the source slice and no crate-local unsafe
+code is used. The hook contract and optimized parent equivalence are unproved under
+[#25](https://github.com/NyxFoundation/nyx-ssz/issues/25). See
+[native integer sequence output](native-sequence-output.md).
+
 ## Fixed-sequence decode hook
 
 `Ssz::decode_fixed_sequence(input)` decodes a sequence of a fixed-width type

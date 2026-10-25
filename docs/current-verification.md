@@ -1,6 +1,6 @@
 ---
 title: Current-source proof scope and explicit skips
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 tags:
   - ssz
   - aeneas
@@ -66,11 +66,13 @@ unproved derive obligations.
   are unproved. All added trait members are explicitly inventoried as unproved; the
   historical `CodecLaw` is not treated as coverage of the new behavior.
 - [#25: remaining equivalence laws](https://github.com/NyxFoundation/nyx-ssz/issues/25):
-  the other 97 skips include Cargo/MIR host-tool integration, metadata/codec laws,
+  the remaining skips include Cargo/MIR host-tool integration, metadata/codec laws,
   fail-fast decode/drop behavior, generated conversions, typed paths, node access and proof construction.
   They are outstanding obligations, not claims that every operation is individually impossible.
-  The stack-range container decoder, table-free fixed decoder and bulk-copy optimization are
-  native-tested changes within that backlog, not newly proved codec equivalence laws.
+  The stack-range container decoder, table-free fixed decoder and bulk-copy optimizations are
+  native-tested changes within that backlog, not newly proved codec equivalence laws. The
+  `fixed_sequence_bytes` hook additionally requires exact canonical-byte, width, fallback,
+  encode and Merkle-packing agreement; it is inventoried as an unproved trait member.
 
 Historical broader generated artifacts and registrations are not current-source certification.
 `HistoricalMerkle.lean` and `HistoricalMultiproof.lean` preserve omitted Aeneas declaration

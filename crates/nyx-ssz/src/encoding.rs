@@ -1,6 +1,6 @@
 //! Allocation-free helpers for typed and generated encoders.
 use crate::{
-    codec::{fixed_size, Ssz},
+    codec::{fixed_size, validated_fixed_sequence_bytes, Ssz},
     error::CodecError,
 };
 
@@ -137,6 +137,12 @@ impl<'a> ContainerWriter<'a> {
 }
 
 pub(crate) fn sequence_len<T: Ssz>(values: &[T]) -> Result<usize, CodecError> {
+    if let Some(bytes) = validated_fixed_sequence_bytes(values)? {
+        if bytes.len() as u128 >= ENVELOPE {
+            return Err(CodecError::SizeOverflow);
+        }
+        return Ok(bytes.len());
+    }
     let mut body = 0_u128;
     let mut oversized = false;
     for value in values {
@@ -163,6 +169,9 @@ pub(crate) fn sequence_len<T: Ssz>(values: &[T]) -> Result<usize, CodecError> {
 }
 
 pub(crate) fn write_sequence<T: Ssz>(values: &[T], output: &mut [u8]) -> Result<(), CodecError> {
+    if let Some(bytes) = validated_fixed_sequence_bytes(values)? {
+        return copy(output, bytes);
+    }
     let fixed = fixed::<T>()?;
     let leading = if fixed {
         output.len()

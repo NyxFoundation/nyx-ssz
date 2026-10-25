@@ -14,7 +14,7 @@ Crate publishing remains disabled. This is not a security audit or a claim of pe
 
 [Native API and limitations](docs/native-api.md) · [Benchmark results](docs/benchmarks.md) ·
 [Current codec comparison](docs/bulk-codecs.md) · [Fail-fast decode](docs/fail-fast-decode.md) ·
-[Verification scope](docs/verification.md)
+[Native integer output](docs/native-sequence-output.md) · [Verification scope](docs/verification.md)
 
 **Current-source Aeneas/Lean verification:** 12 hash-independent gindex/helper-index operations are freshly extracted and kernel checked.
 The remaining 105 documented APIs, 17 library codec dictionaries and derive transformations are explicitly **unproved/skipped**, tracked in [#24](https://github.com/NyxFoundation/nyx-ssz/issues/24) and [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25), with the six RustCrypto-dependent skips in [#27](https://github.com/NyxFoundation/nyx-ssz/issues/27).
@@ -37,6 +37,9 @@ removed, and derived variable containers validate offsets with stack metadata. T
 change and measurements are documented in [fail-fast decode](docs/fail-fast-decode.md).
 Aligned little-endian primitive integer lists use a safe validated native copy; the recorded
 12KB mixed decode is 252.586ns versus libssz's 256.937ns in the same five-round batch.
+The provided `Ssz::fixed_sequence_bytes` hook now reuses the same safe native view for
+integer sequence encoding and Merkle packing. Mixed encode improved 3.16×, while Mixed root
+is within 1.05× of libssz; these hook laws remain unproved under #25.
 
 ## Example
 

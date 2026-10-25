@@ -31,6 +31,13 @@ pub trait Ssz: Sized {
     /// partial writes; callers must discard the destination on error.
     fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError>;
     fn decode(bytes: &[u8]) -> Result<Self, CodecError>;
+    /// Borrow the canonical concatenated bytes of a fixed-width sequence when the
+    /// representation permits a safe native view. Implementations returning `Some`
+    /// guarantee exact element order, width and canonical byte order for every value.
+    fn fixed_sequence_bytes(values: &[Self]) -> Option<&[u8]> {
+        let _ = values;
+        None
+    }
     /// Decode fixed-width values under the four-byte sequence envelope, without
     /// an additional element-count bound. Success must return one value per
     /// declared width. Variable declarations are rejected. Integer implementations
@@ -44,6 +51,23 @@ pub trait Ssz: Sized {
 /// Return a fixed width, variable layout (`Ok(None)`), or size overflow.
 pub const fn fixed_size<T: Ssz>() -> Result<Option<usize>, CodecError> {
     type_info::fixed_size(T::TYPE)
+}
+
+pub(crate) fn validated_fixed_sequence_bytes<T: Ssz>(
+    values: &[T],
+) -> Result<Option<&[u8]>, CodecError> {
+    let Some(bytes) = T::fixed_sequence_bytes(values) else {
+        return Ok(None);
+    };
+    let width = fixed_size::<T>()?.ok_or(CodecError::BadDeclaration)?;
+    let expected = values
+        .len()
+        .checked_mul(width)
+        .ok_or(CodecError::SizeOverflow)?;
+    if bytes.len() != expected {
+        return Err(CodecError::InvalidLength);
+    }
+    Ok(Some(bytes))
 }
 
 /// Whether declared values pack together before collection Merkleization.
@@ -201,6 +225,11 @@ fn scalar_error(error: scalar::ScalarError) -> CodecError {
 macro_rules! integer_bulk_method {
     (bool) => {};
     ($type:ident) => {
+        #[cfg(target_endian = "little")]
+        fn fixed_sequence_bytes(values: &[Self]) -> Option<&[u8]> {
+            Some(bytemuck::cast_slice(values))
+        }
+
         fn decode_fixed_sequence(input: &[u8]) -> Result<Vec<Self>, CodecError> {
             decode_integer_sequence::<Self, { core::mem::size_of::<$type>() }>(
                 input,
