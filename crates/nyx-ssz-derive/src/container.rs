@@ -57,8 +57,8 @@ fn allocating_encode(
 ) -> TokenStream {
     quote! {
         fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
             if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
+                #krate::codec::validate_type::<Self>()?;
                 #classify
                 if !__ssz_slow {
                     let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
