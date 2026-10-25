@@ -121,12 +121,16 @@ reserving the potential full result would overflow native allocation limits.
 See [measurements and regression evidence](fixed-decode.md).
 These changed codec laws remain unproved under the existing equivalence backlog.
 
-## Small fixed decoding
+## Small fixed codecs
 
 All-fixed, non-progressive containers validate the declaration and exact body length, then
-split field slices directly. They do not build a range table. A width sum that overflows
-`usize` is `InvalidLength`, and inputs of at least four gigabytes remain `SizeOverflow`,
-both before any field decoder. Completed fields are dropped normally if a later field fails.
+split field slices directly. They do not build a range table. Encoding of the same containers
+validates every child in order, applies the four-byte envelope, and writes field bytes directly.
+A deferred native overflow still becomes `SizeOverflow` only after later protocol errors.
+Variable and progressive encoding retains `ContainerWriter`; variable decoding uses validated
+stack ranges. A width sum that overflows `usize` is `InvalidLength`, and inputs of at least four
+gigabytes remain `SizeOverflow`, both before any field decoder. Completed fields are dropped
+normally if a later field fails. See [fixed container encode measurements](fixed-encode.md).
 
 `ByteVector<N>` for `N <= 32` stores those bytes inline. `from_bytes` therefore does not
 preserve the input allocation at those sizes. `N > 32` and every `ByteList` still move the

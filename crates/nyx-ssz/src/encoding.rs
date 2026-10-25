@@ -19,6 +19,41 @@ pub fn copy(output: &mut [u8], bytes: &[u8]) -> Result<(), CodecError> {
     Ok(())
 }
 
+/// Classification of one child for the all-fixed container fast path.
+pub enum FixedChild {
+    /// Fixed declaration and a representable encoded length.
+    Fixed(usize),
+    /// Fixed declaration whose value cannot be represented. Later protocol errors still win.
+    DeferredOverflow,
+    /// Variable layout or an unrepresentable fixed declaration. Use the offset writer.
+    NotFixed,
+}
+
+/// Validate one child before deciding whether a container can be written without offsets.
+pub fn fixed_child<T: Ssz>(value: &T) -> Result<FixedChild, CodecError> {
+    let length = match value.encoded_len() {
+        Ok(length) => Some(length),
+        Err(CodecError::NativeOutputOverflow) => None,
+        Err(error) => return Err(error),
+    };
+    match fixed_size::<T>() {
+        Ok(Some(_)) => Ok(match length {
+            Some(length) => FixedChild::Fixed(length),
+            None => FixedChild::DeferredOverflow,
+        }),
+        Ok(None) | Err(CodecError::SizeOverflow) => Ok(FixedChild::NotFixed),
+        Err(error) => Err(error),
+    }
+}
+
+/// Apply the four-byte envelope after every fixed child has been classified.
+pub fn finish_fixed_total(total: u128, oversized: bool) -> Result<usize, CodecError> {
+    if oversized || total >= ENVELOPE {
+        return Err(CodecError::SizeOverflow);
+    }
+    Ok(total as usize)
+}
+
 fn fixed<T: Ssz>() -> Result<bool, CodecError> {
     match fixed_size::<T>() {
         Ok(None) => Ok(false),

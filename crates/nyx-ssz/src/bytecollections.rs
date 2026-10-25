@@ -144,11 +144,23 @@ mod ssz {
         const TYPE: &'static TypeDescriptor = &TypeDescriptor::ByteVector(N);
 
         fn encoded_len(&self) -> Result<usize, CodecError> {
+            if N == 0 {
+                return Err(CodecError::EmptyVector);
+            }
+            if N <= INLINE_LIMIT {
+                return Ok(N);
+            }
             bytes::encode_byte_vector(self.as_bytes(), N)
                 .map(|bytes| bytes.len())
                 .map_err(byte_error)
         }
         fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
+            if N == 0 {
+                return Err(CodecError::EmptyVector);
+            }
+            if N <= INLINE_LIMIT {
+                return crate::encoding::copy(output, &self.inline[..N]);
+            }
             let bytes = bytes::encode_byte_vector(self.as_bytes(), N).map_err(byte_error)?;
             crate::encoding::copy(output, bytes)
         }
