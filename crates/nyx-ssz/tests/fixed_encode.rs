@@ -1,4 +1,5 @@
 use nyx_ssz::{bytecollections::ByteVector, codec::Ssz, error::CodecError};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Overflowing;
 impl Ssz for Overflowing {
@@ -52,6 +53,49 @@ struct FixedBudget {
 struct Header {
     slot: u64,
     root: ByteVector<32>,
+}
+
+static LENGTH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+struct VariableByte(u8);
+impl Ssz for VariableByte {
+    const TYPE: &'static nyx_ssz::type_info::TypeDescriptor =
+        &nyx_ssz::type_info::TypeDescriptor::ByteList(1);
+    fn encoded_len(&self) -> Result<usize, CodecError> {
+        LENGTH_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }
+    fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
+        nyx_ssz::encoding::copy(output, &[self.0])
+    }
+    fn decode(input: &[u8]) -> Result<Self, CodecError> {
+        if input.len() != 1 {
+            return Err(CodecError::InvalidLength);
+        }
+        Ok(Self(input[0]))
+    }
+    fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
+        Ok([self.0; 32])
+    }
+}
+
+#[derive(nyx_ssz::Ssz)]
+struct VariableOnly {
+    value: VariableByte,
+}
+
+#[test]
+fn should_skip_fixed_classification_for_variable_containers() {
+    LENGTH_CALLS.store(0, Ordering::SeqCst);
+    assert_eq!(
+        VariableOnly {
+            value: VariableByte(7)
+        }
+        .encode()
+        .unwrap(),
+        [4, 0, 0, 0, 7]
+    );
+    assert_eq!(LENGTH_CALLS.load(Ordering::SeqCst), 2);
 }
 
 #[test]

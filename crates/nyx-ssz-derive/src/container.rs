@@ -34,19 +34,23 @@ fn encode_method(fields: &[Field], krate: &TokenStream, progressive: bool) -> To
     if progressive {
         return slow_encode(fields, krate);
     }
+    let types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+    let layout = const_fixed_layout(&types, krate);
     let classify = classify_fixed(fields, krate);
     let writes = write_fixed(fields, krate);
     fast_encode_impl(
+        layout.clone(),
         classify.clone(),
         writes.clone(),
         slow_len_body(fields, krate),
         slow_into_body(fields, krate),
-        allocating_encode(&classify, &writes, krate),
+        allocating_encode(&layout, &classify, &writes, krate),
         krate,
     )
 }
 
 fn allocating_encode(
+    layout: &TokenStream,
     classify: &TokenStream,
     writes: &TokenStream,
     krate: &TokenStream,
@@ -54,18 +58,20 @@ fn allocating_encode(
     quote! {
         fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
             #krate::codec::validate_type::<Self>()?;
-            #classify
-            if !__ssz_slow {
-                let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
-                let mut __ssz_output = ::std::vec![0; __ssz_total];
-                {
-                    let mut __ssz_rest = __ssz_output.as_mut_slice();
-                    #writes
-                    if !__ssz_rest.is_empty() {
-                        return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+            if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
+                #classify
+                if !__ssz_slow {
+                    let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
+                    let mut __ssz_output = ::std::vec![0; __ssz_total];
+                    {
+                        let mut __ssz_rest = __ssz_output.as_mut_slice();
+                        #writes
+                        if !__ssz_rest.is_empty() {
+                            return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                        }
                     }
+                    return ::core::result::Result::Ok(__ssz_output);
                 }
-                return ::core::result::Result::Ok(__ssz_output);
             }
             let mut __ssz_output = ::std::vec![0; self.encoded_len()?];
             self.encode_into(&mut __ssz_output)?;
@@ -75,6 +81,7 @@ fn allocating_encode(
 }
 
 fn fast_encode_impl(
+    layout: TokenStream,
     classify: TokenStream,
     writes: TokenStream,
     length: TokenStream,
@@ -85,25 +92,29 @@ fn fast_encode_impl(
     quote! {
         fn encoded_len(&self) -> ::core::result::Result<usize, #krate::error::CodecError> {
             #krate::codec::validate_type::<Self>()?;
-            #classify
-            if !__ssz_slow {
-                return #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize);
+            if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
+                #classify
+                if !__ssz_slow {
+                    return #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize);
+                }
             }
             #length
         }
         fn encode_into(&self, output: &mut [u8]) -> ::core::result::Result<(), #krate::error::CodecError> {
             #krate::codec::validate_type::<Self>()?;
-            #classify
-            if !__ssz_slow {
-                let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
-                #krate::encoding::check_length(output, __ssz_total)?;
-                let mut __ssz_rest = output;
-                #writes
-                return if __ssz_rest.is_empty() {
-                    ::core::result::Result::Ok(())
-                } else {
-                    ::core::result::Result::Err(#krate::error::CodecError::InvalidLength)
-                };
+            if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
+                #classify
+                if !__ssz_slow {
+                    let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
+                    #krate::encoding::check_length(output, __ssz_total)?;
+                    let mut __ssz_rest = output;
+                    #writes
+                    return if __ssz_rest.is_empty() {
+                        ::core::result::Result::Ok(())
+                    } else {
+                        ::core::result::Result::Err(#krate::error::CodecError::InvalidLength)
+                    };
+                }
             }
             #write
         }
