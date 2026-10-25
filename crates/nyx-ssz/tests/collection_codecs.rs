@@ -89,29 +89,28 @@ fn should_build_offsets_when_a_list_contains_variable_elements() {
 }
 
 #[test]
-fn should_preserve_nested_decode_state_when_a_later_child_rejects_its_body() {
+fn should_return_nested_child_errors_when_a_later_body_is_invalid() {
     let bytes = [8, 0, 0, 0, 9, 0, 0, 0, 0, 0, 2];
-    let failure = decode::<Vector<List<bool, 4>, 2>>(&bytes).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
-    assert_eq!(failure.state.values.len(), 1);
-    assert_eq!(failure.state.values[0].as_slice(), &[false]);
-    let child = failure.state.child.unwrap();
-    assert_eq!(child.values, [false]);
-    assert_eq!(child.child, Some(()));
+    assert_eq!(
+        decode::<Vector<List<bool, 4>, 2>>(&bytes).unwrap_err(),
+        CodecError::InvalidBoolean
+    );
 }
 
 #[test]
 fn should_reject_invalid_layout_before_decoding_elements() {
-    let failure = decode::<Vector<u16, 2>>(&[0, 0]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidLength);
-    assert!(failure.state.values.is_empty());
-    assert!(failure.state.child.is_none());
-    let incomplete = decode::<List<u16, 4>>(&[0]).unwrap_err();
-    assert_eq!(incomplete.kind, CodecError::ScopeUndivided);
-    assert!(incomplete.state.values.is_empty());
-    let excess = decode::<List<bool, 1>>(&[2, 2]).unwrap_err();
-    assert_eq!(excess.kind, CodecError::OverLimit);
-    assert!(excess.state.values.is_empty());
+    assert_eq!(
+        decode::<Vector<u16, 2>>(&[0, 0]).unwrap_err(),
+        CodecError::InvalidLength
+    );
+    assert_eq!(
+        decode::<List<u16, 4>>(&[0]).unwrap_err(),
+        CodecError::ScopeUndivided
+    );
+    assert_eq!(
+        decode::<List<bool, 1>>(&[2, 2]).unwrap_err(),
+        CodecError::OverLimit
+    );
 }
 
 #[test]
@@ -120,13 +119,15 @@ fn should_validate_nested_declarations_when_values_or_capacities_are_empty() {
         validate_type::<Vector<bool, 0>>(),
         Err(CodecError::EmptyVector)
     );
-    let invalid = decode::<Vector<bool, 0>>(&[]).unwrap_err();
-    assert_eq!(invalid.kind, CodecError::EmptyVector);
+    assert_eq!(
+        decode::<Vector<bool, 0>>(&[]).unwrap_err(),
+        CodecError::EmptyVector
+    );
     let parent = list::<Vector<bool, 0>, 0>(vec![]).unwrap();
     assert_eq!(encode(&parent), Err(CodecError::EmptyVector));
     assert_eq!(hash_tree_root(&parent), Err(CodecError::EmptyVector));
     assert_eq!(
-        decode::<List<Vector<bool, 0>, 0>>(&[]).unwrap_err().kind,
+        decode::<List<Vector<bool, 0>, 0>>(&[]).unwrap_err(),
         CodecError::EmptyVector
     );
 }
@@ -136,17 +137,17 @@ fn should_accept_empty_lists_when_a_valid_fixed_child_width_is_unrepresentable()
     type HugeChild = Vector<u16, { usize::MAX }>;
     let value = list::<HugeChild, 0>(vec![]).unwrap();
     assert_eq!(fixed_size::<HugeChild>(), Err(CodecError::SizeOverflow));
-    let failure = decode::<Vector<HugeChild, 1>>(&[]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidLength);
-    assert!(failure.state.values.is_empty());
-    assert!(failure.state.child.is_none());
+    assert_eq!(
+        decode::<Vector<HugeChild, 1>>(&[]).unwrap_err(),
+        CodecError::InvalidLength
+    );
     assert_eq!(encode(&value), Ok(vec![]));
     assert!(decode::<List<HugeChild, 0>>(&[])
         .unwrap()
         .as_slice()
         .is_empty());
     assert_eq!(
-        decode::<List<HugeChild, 1>>(&[0]).unwrap_err().kind,
+        decode::<List<HugeChild, 1>>(&[0]).unwrap_err(),
         CodecError::ScopeUndivided
     );
     assert_eq!(

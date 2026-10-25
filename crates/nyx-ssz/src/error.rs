@@ -47,33 +47,6 @@ pub enum CodecError {
     UnionIncompatible,
 }
 
-/// A decoding refusal that returns ownership of every partially decoded value.
-///
-/// Basic codecs use `()`. Composite codecs must retain decoded prefixes and
-/// nested failure state instead of invoking element destructors inside decode.
-#[derive(Eq, PartialEq)]
-pub struct DecodeFailure<State> {
-    pub kind: CodecError,
-    pub state: State,
-}
-
-impl<State> std::fmt::Debug for DecodeFailure<State> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("DecodeFailure")
-            .field("kind", &self.kind)
-            .finish_non_exhaustive()
-    }
-}
-
-impl<State> std::fmt::Display for DecodeFailure<State> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.kind, formatter)
-    }
-}
-
-impl<State> std::error::Error for DecodeFailure<State> {}
-
 impl std::fmt::Display for CodecError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {

@@ -83,26 +83,20 @@ fn should_use_explicit_selectors_when_deriving_compatible_unions() {
         value.hash_tree_root().unwrap(),
         hash_pair(&0x1234u16.hash_tree_root().unwrap(), &selector)
     );
+    assert_eq!(Choice::decode(&[]).unwrap_err(), CodecError::NoSelector);
     assert_eq!(
-        Choice::decode(&[]).unwrap_err().kind,
-        CodecError::NoSelector
-    );
-    assert_eq!(
-        Choice::decode(&[0]).unwrap_err().kind,
+        Choice::decode(&[0]).unwrap_err(),
         CodecError::UnknownSelector
     );
 }
 
 #[test]
-fn should_retain_completed_fields_when_a_later_field_refuses_its_body() {
-    let failure = Record::decode(&[1, 0, 7, 0, 0, 0, 2]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
-    assert_eq!(failure.state.a.value, Some(1));
-    assert!(failure.state.bytes.value.is_some());
-    assert_eq!(failure.state.flag.child, Some(()));
-    let failure = Record::decode(&[0]).unwrap_err();
-    assert!(failure.state.a.value.is_none());
-    assert!(failure.state.flag.child.is_none());
+fn should_return_the_first_child_error_when_a_later_field_refuses_its_body() {
+    assert_eq!(
+        Record::decode(&[1, 0, 7, 0, 0, 0, 2]).unwrap_err(),
+        CodecError::InvalidBoolean
+    );
+    assert_eq!(Record::decode(&[0]).unwrap_err(), CodecError::ScopeTooSmall);
 }
 
 #[test]

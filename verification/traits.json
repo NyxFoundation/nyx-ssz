@@ -10,13 +10,13 @@
       "nyx_ssz::bytecollections::ssz"
     ],
     "members": {
-      "DecodeState": "assoc_type",
       "TYPE": "assoc_const",
       "encode": "function",
       "decode": "function",
       "hash_tree_root": "function",
       "encoded_len": "function",
       "encode_into": "function",
+      "fixed_sequence_bytes": "function",
       "decode_fixed_sequence": "function"
     },
     "instances": [

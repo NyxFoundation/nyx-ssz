@@ -1,6 +1,6 @@
 use nyx_ssz::{
     codec::{fixed_size, is_basic, is_compatible, validate_type, Ssz},
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     type_info::TypeDescriptor,
     U256,
 };
@@ -28,7 +28,6 @@ struct DeclaredUint<const WIDTH: usize>;
 
 // Metadata inspection must not invoke any value codec, even on an external type.
 impl<const WIDTH: usize> Ssz for DeclaredUint<WIDTH> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(WIDTH);
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -37,7 +36,7 @@ impl<const WIDTH: usize> Ssz for DeclaredUint<WIDTH> {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         panic!("metadata must not invoke encode_into")
     }
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
         panic!("metadata inspection must not call decode")
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -58,10 +57,7 @@ fn assert_invalid_width<const WIDTH: usize>() {
 #[test]
 fn should_validate_fixed_sequence_declarations_before_invoking_external_callbacks() {
     assert_eq!(
-        DeclaredUint::<3>::decode_fixed_sequence(&[])
-            .err()
-            .unwrap()
-            .kind,
+        DeclaredUint::<3>::decode_fixed_sequence(&[]).err().unwrap(),
         CodecError::InvalidIntegerWidth
     );
     assert!(DeclaredUint::<1>::decode_fixed_sequence(&[])
@@ -118,7 +114,6 @@ const NEW_SHAPES: [TypeDescriptor; 8] = [
 struct DeclaredShape<const INDEX: usize>;
 
 impl<const INDEX: usize> Ssz for DeclaredShape<INDEX> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &NEW_SHAPES[INDEX];
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -127,7 +122,7 @@ impl<const INDEX: usize> Ssz for DeclaredShape<INDEX> {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         panic!("metadata must not invoke encode_into")
     }
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
         panic!("metadata inspection must not call decode")
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

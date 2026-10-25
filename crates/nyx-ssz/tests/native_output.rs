@@ -5,7 +5,7 @@ use nyx_ssz::{
     codec::{encode, Ssz},
     collections::progressive_list,
     collections::{list, vector},
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     type_info::TypeDescriptor,
 };
 
@@ -19,7 +19,6 @@ struct Script<const VARIABLE: bool> {
 }
 
 impl<const VARIABLE: bool> Ssz for Script<VARIABLE> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = if VARIABLE {
         &TypeDescriptor::List(&TypeDescriptor::Uint(1), 8)
     } else {
@@ -37,11 +36,8 @@ impl<const VARIABLE: bool> Ssz for Script<VARIABLE> {
         }
     }
 
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        Err(DecodeFailure {
-            kind: CodecError::InvalidLength,
-            state: (),
-        })
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
+        Err(CodecError::InvalidLength)
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

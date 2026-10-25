@@ -8,13 +8,12 @@ use crate::{
     bitcollections::{BitList, BitVector, BoundedProgressiveBitList, ProgressiveBitList},
     bitfield,
     codec::Ssz,
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     tree_hash,
     type_info::TypeDescriptor,
 };
 
 impl<const N: usize> Ssz for BitVector<N> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::BitVector(N);
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -24,11 +23,8 @@ impl<const N: usize> Ssz for BitVector<N> {
         crate::bit_encoding::write_vector(self.as_ssz_bytes(), N, output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        match Self::from_ssz_bytes(bytes.to_vec()) {
-            Ok(value) => Ok(value),
-            Err(kind) => Err(DecodeFailure { kind, state: () }),
-        }
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        Self::from_ssz_bytes(bytes.to_vec())
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -38,7 +34,6 @@ impl<const N: usize> Ssz for BitVector<N> {
 }
 
 impl<const MAX: usize> Ssz for BitList<MAX> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::BitList(MAX);
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -48,11 +43,8 @@ impl<const MAX: usize> Ssz for BitList<MAX> {
         crate::bit_encoding::write_list(self.as_ssz_bytes(), Some(MAX), output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        match Self::from_ssz_bytes(bytes.to_vec()) {
-            Ok(value) => Ok(value),
-            Err(kind) => Err(DecodeFailure { kind, state: () }),
-        }
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        Self::from_ssz_bytes(bytes.to_vec())
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -62,7 +54,6 @@ impl<const MAX: usize> Ssz for BitList<MAX> {
 }
 
 impl<const MAX: usize> Ssz for BoundedProgressiveBitList<MAX> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::ProgressiveBitList(Some(MAX));
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -72,11 +63,8 @@ impl<const MAX: usize> Ssz for BoundedProgressiveBitList<MAX> {
         crate::bit_encoding::write_list(self.as_ssz_bytes(), Some(MAX), output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        match Self::from_ssz_bytes(bytes.to_vec()) {
-            Ok(value) => Ok(value),
-            Err(kind) => Err(DecodeFailure { kind, state: () }),
-        }
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        Self::from_ssz_bytes(bytes.to_vec())
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -92,7 +80,6 @@ impl<const MAX: usize> Ssz for BoundedProgressiveBitList<MAX> {
 }
 
 impl Ssz for ProgressiveBitList {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::ProgressiveBitList(None);
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -102,11 +89,8 @@ impl Ssz for ProgressiveBitList {
         crate::bit_encoding::write_list(self.as_ssz_bytes(), None, output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        match Self::from_ssz_bytes(bytes.to_vec()) {
-            Ok(value) => Ok(value),
-            Err(kind) => Err(DecodeFailure { kind, state: () }),
-        }
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        Self::from_ssz_bytes(bytes.to_vec())
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

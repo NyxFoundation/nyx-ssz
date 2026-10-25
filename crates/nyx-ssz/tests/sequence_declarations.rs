@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use nyx_ssz::{
     codec::{fixed_size, is_basic, is_compatible, validate_type, Ssz},
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     type_info::TypeDescriptor,
 };
 
@@ -14,7 +14,6 @@ struct Declared<D>(PhantomData<D>);
 
 // Inspecting declarations must never call a value codec.
 impl<D: Declaration> Ssz for Declared<D> {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = D::TYPE;
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -23,7 +22,7 @@ impl<D: Declaration> Ssz for Declared<D> {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         panic!("metadata must not invoke encode_into")
     }
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
         panic!("metadata must not call decode")
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

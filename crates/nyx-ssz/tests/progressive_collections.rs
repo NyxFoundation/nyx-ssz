@@ -137,14 +137,11 @@ fn should_nest_progressive_lists_when_each_child_has_its_own_offset_table() {
 }
 
 #[test]
-fn should_return_completed_values_and_child_state_when_a_later_element_is_invalid() {
-    let failure = decode::<ProgressiveList<Vector<bool, 2>>>(&[0, 1, 0, 2]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
-    assert_eq!(failure.state.values.len(), 1);
-    assert_eq!(failure.state.values[0].as_slice(), &[false, true]);
-    let child = failure.state.child.unwrap();
-    assert_eq!(child.values, [false]);
-    assert_eq!(child.child, Some(()));
+fn should_return_child_errors_when_a_later_element_is_invalid() {
+    assert_eq!(
+        decode::<ProgressiveList<Vector<bool, 2>>>(&[0, 1, 0, 2]).unwrap_err(),
+        CodecError::InvalidBoolean
+    );
 }
 
 #[test]
@@ -153,22 +150,20 @@ fn should_reject_invalid_types_even_when_the_progressive_value_is_empty() {
     assert_eq!(encode(&value), Err(CodecError::EmptyVector));
     assert_eq!(hash_tree_root(&value), Err(CodecError::EmptyVector));
     assert_eq!(
-        decode::<ProgressiveList<Vector<u8, 0>>>(&[])
-            .unwrap_err()
-            .kind,
+        decode::<ProgressiveList<Vector<u8, 0>>>(&[]).unwrap_err(),
         CodecError::EmptyVector
     );
 }
 
 #[test]
-fn should_reject_noncanonical_layouts_before_returning_any_decoded_children() {
+fn should_reject_noncanonical_layouts_before_decoding_children() {
     for bytes in [&[5, 0, 0, 0][..], &[8, 0, 0, 0][..], &[0][..]] {
-        let failure = decode::<ProgressiveList<List<u8, 2>>>(bytes).unwrap_err();
-        assert!(failure.state.values.is_empty());
-        assert!(failure.state.child.is_none());
+        assert!(decode::<ProgressiveList<List<u8, 2>>>(bytes).is_err());
     }
-    let failure = decode::<ProgressiveList<u16>>(&[1]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::ScopeUndivided);
+    assert_eq!(
+        decode::<ProgressiveList<u16>>(&[1]).unwrap_err(),
+        CodecError::ScopeUndivided
+    );
 }
 
 #[test]
@@ -180,7 +175,7 @@ fn should_accept_empty_lists_when_only_the_fixed_child_width_exceeds_usize() {
         .as_slice()
         .is_empty());
     assert_eq!(
-        decode::<ProgressiveList<Huge>>(&[1]).unwrap_err().kind,
+        decode::<ProgressiveList<Huge>>(&[1]).unwrap_err(),
         CodecError::ScopeUndivided
     );
     assert_eq!(encode(&progressive_list::<Huge>(vec![])), Ok(vec![]));

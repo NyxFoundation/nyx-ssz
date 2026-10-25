@@ -1,7 +1,6 @@
 //! Derive canonical SSZ codecs from Rust named structs and tagged enums.
 mod attributes;
 mod container;
-mod container_marker;
 #[cfg(test)]
 mod tests;
 mod union;
@@ -52,24 +51,6 @@ fn crate_path(input: &DeriveInput) -> syn::Result<Tokens> {
             quote!(::#ident)
         }
         proc_macro_crate::FoundCrate::Itself => quote!(::nyx_ssz),
-    })
-}
-
-pub(crate) fn state_name(input: &DeriveInput) -> syn::Ident {
-    use quote::ToTokens;
-    let mut candidate = quote::format_ident!("__NyxSszDecodeStateFor{}", input.ident);
-    while contains_ident(input.to_token_stream(), &candidate.to_string()) {
-        candidate = quote::format_ident!("{}_", candidate);
-    }
-    candidate
-}
-
-fn contains_ident(tokens: Tokens, name: &str) -> bool {
-    use syn::ext::IdentExt;
-    tokens.into_iter().any(|token| match token {
-        proc_macro2::TokenTree::Ident(ident) => ident.unraw() == name,
-        proc_macro2::TokenTree::Group(group) => contains_ident(group.stream(), name),
-        _ => false,
     })
 }
 

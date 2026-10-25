@@ -84,15 +84,11 @@ fn bounded_fixed_values_match_accepted_unbounded_progressive_values() {
     }
     assert!(decode::<BoundedProgressiveList<u8, 0>>(&[]).is_ok());
     assert_eq!(
-        decode::<BoundedProgressiveList<bool, 0>>(&[2])
-            .unwrap_err()
-            .kind,
+        decode::<BoundedProgressiveList<bool, 0>>(&[2]).unwrap_err(),
         CodecError::OverLimit
     );
     assert_eq!(
-        decode::<BoundedProgressiveList<bool, 1>>(&[2])
-            .unwrap_err()
-            .kind,
+        decode::<BoundedProgressiveList<bool, 1>>(&[2]).unwrap_err(),
         CodecError::InvalidBoolean
     );
 }
@@ -146,25 +142,25 @@ fn bounded_packed_dictionaries_compose_as_variable_children_at_machine_maximum()
 }
 
 #[test]
-fn layout_and_capacity_faults_precede_callbacks_and_retain_empty_state() {
+fn layout_and_capacity_faults_precede_callbacks() {
     // Two variable children; the second offset is unordered and the first body is invalid.
     let bytes = [8, 0, 0, 0, 4, 0, 0, 0, 2];
-    let failure = decode::<BoundedProgressiveList<List<bool, 2>, 1>>(&bytes).unwrap_err();
-    assert_eq!(failure.kind, CodecError::OverLimit);
-    assert!(failure.state.values.is_empty());
-    assert!(failure.state.child.is_none());
-    let failure = decode::<BoundedProgressiveList<List<bool, 2>, 2>>(&bytes).unwrap_err();
-    assert_eq!(failure.kind, CodecError::OffsetUnordered);
-    assert!(failure.state.values.is_empty());
-    assert!(failure.state.child.is_none());
-    let failure = decode::<BoundedProgressiveList<u16, 0>>(&[1]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::ScopeUndivided);
-    let failure = decode::<BoundedProgressiveList<Vector<bool, 2>, 2>>(&[0, 1, 0, 2]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
-    assert_eq!(failure.state.values[0].as_slice(), &[false, true]);
-    let child = failure.state.child.unwrap();
-    assert_eq!(child.values, [false]);
-    assert_eq!(child.child, Some(()));
+    assert_eq!(
+        decode::<BoundedProgressiveList<List<bool, 2>, 1>>(&bytes).unwrap_err(),
+        CodecError::OverLimit
+    );
+    assert_eq!(
+        decode::<BoundedProgressiveList<List<bool, 2>, 2>>(&bytes).unwrap_err(),
+        CodecError::OffsetUnordered
+    );
+    assert_eq!(
+        decode::<BoundedProgressiveList<u16, 0>>(&[1]).unwrap_err(),
+        CodecError::ScopeUndivided
+    );
+    assert_eq!(
+        decode::<BoundedProgressiveList<Vector<bool, 2>, 2>>(&[0, 1, 0, 2]).unwrap_err(),
+        CodecError::InvalidBoolean
+    );
 }
 
 #[test]
@@ -172,16 +168,14 @@ fn invalid_child_declarations_precede_bounds_and_overflowing_widths_allow_empty_
     let empty = bounded_progressive_list::<Vector<u8, 0>, 0>(vec![]).unwrap();
     assert_eq!(empty.encode(), Err(CodecError::EmptyVector));
     assert_eq!(empty.hash_tree_root(), Err(CodecError::EmptyVector));
-    let failure = decode::<BoundedProgressiveList<Vector<u8, 0>, 0>>(&[1]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::EmptyVector);
-    assert!(failure.state.values.is_empty());
-    assert!(failure.state.child.is_none());
+    assert_eq!(
+        decode::<BoundedProgressiveList<Vector<u8, 0>, 0>>(&[1]).unwrap_err(),
+        CodecError::EmptyVector
+    );
     type Huge = Vector<Vector<u8, { usize::MAX }>, 2>;
     assert!(decode::<BoundedProgressiveList<Huge, 0>>(&[]).is_ok());
     assert_eq!(
-        decode::<BoundedProgressiveList<Huge, 0>>(&[1])
-            .unwrap_err()
-            .kind,
+        decode::<BoundedProgressiveList<Huge, 0>>(&[1]).unwrap_err(),
         CodecError::ScopeUndivided
     );
 }
@@ -239,8 +233,9 @@ fn packed_capacity_checks_preserve_canonical_error_order_at_zero_one_and_maximum
             BoundedProgressiveBitList::<0>::from_ssz_bytes(bytes.clone()).unwrap_err(),
             expected
         );
-        let failure = decode::<BoundedProgressiveBitList<0>>(&bytes).unwrap_err();
-        assert_eq!(failure.kind, expected);
-        assert_eq!(failure.state, ());
+        assert_eq!(
+            decode::<BoundedProgressiveBitList<0>>(&bytes).unwrap_err(),
+            expected
+        );
     }
 }

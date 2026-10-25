@@ -1,41 +1,39 @@
-//! Progressive-list codecs with exact optional bounds and owned failure state.
+//! Progressive-list codecs with exact optional bounds.
 
 use crate::{
-    codec::{validate_type, SequenceDecodeState, Ssz},
-    collection_codec::{decode_list_values, empty_failure, storage_failure},
+    codec::{validate_type, Ssz},
+    collection_codec::decode_list_values,
     collection_tree::root_progressive_sequence,
     collections::{
-        bounded_progressive_list, progressive_list, BoundedProgressiveList, ProgressiveList,
+        bounded_progressive_list, progressive_list, BoundedProgressiveList, LengthErrorKind,
+        ProgressiveList,
     },
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     type_info::TypeDescriptor,
 };
 
-fn decode_progressive<T: Ssz>(
-    input: &[u8],
-) -> Result<ProgressiveList<T>, DecodeFailure<SequenceDecodeState<T>>> {
-    if let Err(kind) = validate_type::<T>() {
-        return Err(empty_failure::<T>(kind));
+fn storage_error(kind: LengthErrorKind) -> CodecError {
+    match kind {
+        LengthErrorKind::EmptyVector => CodecError::EmptyVector,
+        LengthErrorKind::InvalidLength => CodecError::InvalidLength,
+        LengthErrorKind::OverLimit => CodecError::OverLimit,
     }
-    let values = decode_list_values::<T>(input, None)?;
-    Ok(progressive_list(values))
+}
+
+fn decode_progressive<T: Ssz>(input: &[u8]) -> Result<ProgressiveList<T>, CodecError> {
+    validate_type::<T>()?;
+    Ok(progressive_list(decode_list_values::<T>(input, None)?))
 }
 
 fn decode_bounded_progressive<T: Ssz, const MAX: usize>(
     input: &[u8],
-) -> Result<BoundedProgressiveList<T, MAX>, DecodeFailure<SequenceDecodeState<T>>> {
-    if let Err(kind) = validate_type::<T>() {
-        return Err(empty_failure::<T>(kind));
-    }
-    let values = decode_list_values::<T>(input, Some(MAX))?;
-    match bounded_progressive_list(values) {
-        Ok(value) => Ok(value),
-        Err(error) => Err(storage_failure::<T>(error)),
-    }
+) -> Result<BoundedProgressiveList<T, MAX>, CodecError> {
+    validate_type::<T>()?;
+    bounded_progressive_list(decode_list_values::<T>(input, Some(MAX))?)
+        .map_err(|error| storage_error(error.kind))
 }
 
 impl<T: Ssz, const MAX: usize> Ssz for BoundedProgressiveList<T, MAX> {
-    type DecodeState = SequenceDecodeState<T>;
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::ProgressiveList(T::TYPE, Some(MAX));
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -52,7 +50,7 @@ impl<T: Ssz, const MAX: usize> Ssz for BoundedProgressiveList<T, MAX> {
         crate::encoding::write_sequence(self.as_slice(), output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
         decode_bounded_progressive(bytes)
     }
 
@@ -64,7 +62,6 @@ impl<T: Ssz, const MAX: usize> Ssz for BoundedProgressiveList<T, MAX> {
 }
 
 impl<T: Ssz> Ssz for ProgressiveList<T> {
-    type DecodeState = SequenceDecodeState<T>;
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::ProgressiveList(T::TYPE, None);
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -77,7 +74,7 @@ impl<T: Ssz> Ssz for ProgressiveList<T> {
         crate::encoding::write_sequence(self.as_slice(), output)
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
         decode_progressive(bytes)
     }
 

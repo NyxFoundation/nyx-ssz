@@ -6,21 +6,6 @@ use crate::{
     sha256::hash_pair,
 };
 
-/// Completed value or nested refusal retained by a generated field decoder.
-pub struct FieldDecodeState<T: Ssz> {
-    pub value: Option<T>,
-    pub child: Option<T::DecodeState>,
-}
-
-impl<T: Ssz> Default for FieldDecodeState<T> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            child: None,
-        }
-    }
-}
-
 /// Root fields at ordinary contiguous or progressive sparse positions.
 pub fn root_fields(roots: &[Node], active: Option<&[bool]>) -> Result<Node, CodecError> {
     let Some(active) = active else {

@@ -109,7 +109,7 @@ fn should_validate_type_and_padding_before_accepting_a_vector_encoding() {
         CodecError::PaddingBits
     );
     assert_eq!(
-        decode::<BitVector<3>>(&[0x85]).unwrap_err().kind,
+        decode::<BitVector<3>>(&[0x85]).unwrap_err(),
         CodecError::PaddingBits
     );
 }
@@ -129,10 +129,7 @@ fn should_preserve_delimiter_fault_categories_when_list_encodings_are_invalid() 
             ProgressiveBitList::from_ssz_bytes(bytes.clone()).unwrap_err(),
             expected
         );
-        assert_eq!(
-            decode::<ProgressiveBitList>(&bytes).unwrap_err().kind,
-            expected
-        );
+        assert_eq!(decode::<ProgressiveBitList>(&bytes).unwrap_err(), expected);
     }
     assert_eq!(
         BitList::<2>::from_ssz_bytes(vec![13]).unwrap_err(),

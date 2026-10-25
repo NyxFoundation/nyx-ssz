@@ -10,11 +10,23 @@ fn check<T: Ssz + PartialEq + std::fmt::Debug>(input: &[u8], expected: Vec<T>, w
     assert_eq!(T::decode_fixed_sequence(input).unwrap(), expected);
     assert!(T::decode_fixed_sequence(&[]).unwrap().is_empty());
     if width > 1 {
-        let failure = T::decode_fixed_sequence(&vec![0; width - 1]).err().unwrap();
-        assert_eq!(failure.kind, CodecError::ScopeUndivided);
-        assert!(failure.state.values.is_empty());
-        assert!(failure.state.child.is_none());
+        assert_eq!(
+            T::decode_fixed_sequence(&vec![0; width - 1]),
+            Err(CodecError::ScopeUndivided)
+        );
     }
+}
+
+#[cfg(target_endian = "little")]
+#[test]
+fn should_bulk_decode_aligned_native_integer_bytes() {
+    let words = [7_u64, u64::MAX, 0x0102_0304_0506_0708];
+    let input: &[u8] = bytemuck::cast_slice(&words);
+    check(input, words.to_vec(), 8);
+    assert_eq!(
+        List::<u64, 3>::decode(input).unwrap().as_slice(),
+        words.as_slice()
+    );
 }
 
 #[test]
@@ -51,6 +63,7 @@ fn should_bulk_decode_all_unsigned_widths_from_unaligned_little_endian_inputs() 
 }
 
 static DROPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[derive(Debug)]
 struct BadHook(u8);
 impl Drop for BadHook {
     fn drop(&mut self) {
@@ -58,7 +71,6 @@ impl Drop for BadHook {
     }
 }
 impl Ssz for BadHook {
-    type DecodeState = ();
     const TYPE: &'static nyx_ssz::type_info::TypeDescriptor =
         &nyx_ssz::type_info::TypeDescriptor::Uint(1);
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -67,17 +79,13 @@ impl Ssz for BadHook {
     fn encode_into(&self, out: &mut [u8]) -> Result<(), CodecError> {
         self.0.encode_into(out)
     }
-    fn decode(input: &[u8]) -> Result<Self, nyx_ssz::error::DecodeFailure<()>> {
+    fn decode(input: &[u8]) -> Result<Self, CodecError> {
         u8::decode(input).map(Self)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
         self.0.hash_tree_root()
     }
-    fn decode_fixed_sequence(
-        input: &[u8],
-    ) -> Result<Vec<Self>, nyx_ssz::error::DecodeFailure<nyx_ssz::codec::SequenceDecodeState<Self>>>
-    {
-        // Deliberately malformed external hook: parents must retain all owners.
+    fn decode_fixed_sequence(input: &[u8]) -> Result<Vec<Self>, CodecError> {
         let mut values: Vec<_> = input.iter().copied().map(Self).collect();
         values.push(Self(9));
         Ok(values)
@@ -85,39 +93,31 @@ impl Ssz for BadHook {
 }
 
 #[test]
-fn should_retain_all_returned_owners_when_an_external_bulk_hook_returns_a_wrong_count() {
+fn should_drop_values_when_an_external_bulk_hook_returns_a_wrong_count() {
     DROPS.store(0, std::sync::atomic::Ordering::SeqCst);
-    let failure = List::<BadHook, 1>::decode(&[7]).err().unwrap();
-    assert_eq!(failure.kind, CodecError::InvalidLength);
     assert_eq!(
-        failure.state.values.iter().map(|v| v.0).collect::<Vec<_>>(),
-        [7, 9]
+        List::<BadHook, 1>::decode(&[7]).unwrap_err(),
+        CodecError::InvalidLength
     );
-    assert!(failure.state.child.is_none());
-    assert_eq!(DROPS.load(std::sync::atomic::Ordering::SeqCst), 0);
-    drop(failure);
     assert_eq!(DROPS.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
 #[test]
-fn should_keep_the_generic_boolean_failure_state_and_parent_layout_precedence() {
-    let failure = bool::decode_fixed_sequence(&[1, 0, 2, 1]).unwrap_err();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
-    assert_eq!(failure.state.values, [true, false]);
-    assert!(failure.state.child.is_some());
+fn should_keep_parent_layout_precedence_for_generic_boolean_failures() {
     assert_eq!(
-        Vector::<bool, 2>::decode(&[2]).err().unwrap().kind,
+        bool::decode_fixed_sequence(&[1, 0, 2, 1]),
+        Err(CodecError::InvalidBoolean)
+    );
+    assert_eq!(
+        Vector::<bool, 2>::decode(&[2]).unwrap_err(),
         CodecError::InvalidLength
     );
     assert_eq!(
-        List::<bool, 1>::decode(&[2, 0]).err().unwrap().kind,
+        List::<bool, 1>::decode(&[2, 0]).unwrap_err(),
         CodecError::OverLimit
     );
     assert_eq!(
-        ByteList::<4>::decode_fixed_sequence(&[])
-            .err()
-            .unwrap()
-            .kind,
+        ByteList::<4>::decode_fixed_sequence(&[]).err().unwrap(),
         CodecError::BadDeclaration
     );
 }

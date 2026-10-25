@@ -1,6 +1,6 @@
 ---
 title: Verification scope and trust boundary
-last_updated: 2026-10-23
+last_updated: 2026-10-24
 verification_status: current-12-operation-slice-explicit-issue-linked-skips
 tags:
   - ssz
@@ -11,8 +11,8 @@ tags:
 # Verification scope and trust boundary
 
 **Native implementation complete; current-source formal integration pending.**
-All 13 shapes have codecs, including generated heterogeneous ownership state.
-Typed paths, sparse node access and proof construction are native-tested.
+All 13 shapes have fail-fast codecs returning `CodecError`; generated partial ownership
+state has been removed. Typed paths, sparse node access and proof construction are native-tested.
 All 4,601 pinned official corpus cases pass with preserved source/version-alignment checks.
 
 The current gate freshly extracts and kernel-checks 12 hash-independent gindex/helper-index operations.
@@ -25,7 +25,10 @@ unproved under [#29](https://github.com/NyxFoundation/nyx-ssz/issues/29). Histor
 proofs do not cover the extended trait, and the full gate explicitly rejects that gap.
 Aeneas itself is unchanged; no axiom or input-domain assumption is added.
 The broader proof descriptions below are historical registrations, not certification of the
-enlarged current program. See [native API](native-api.md) and [descriptor evidence](full-descriptors.md).
+enlarged current program. In particular, historical codec laws over `DecodeFailure<DecodeState>`
+do not certify the current fail-fast result type or stack-range container decoder. These obligations
+remain under [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25). See [native API](native-api.md)
+and [descriptor evidence](full-descriptors.md).
 
 **Historical proof suite, not current-source certification:** Boolean, uint8/16/32/64/128/256, Bitvector/Bitlist/ProgressiveBitlist and borrowed
 ByteVector/ByteList/ProgressiveByteList codecs, SHA-256 node combination and

@@ -1,7 +1,7 @@
 //! Collection roots, packing basic elements but rooting composite ones.
 
 use crate::{
-    codec::{fixed_size, is_basic, Ssz},
+    codec::{fixed_size, is_basic, validated_fixed_sequence_bytes, Ssz},
     error::CodecError,
     merkle::{merkleize, merkleize_progressive, MerkleizeError, Node},
     sha256::hash_pair,
@@ -52,13 +52,29 @@ fn maximum_encoding<T: Ssz>(values: &[T]) -> Result<Option<usize>, CodecError> {
     Ok(if oversized { None } else { Some(maximum) })
 }
 
+fn pack_native_bytes(bytes: &[u8], capacity: usize) -> Vec<Node> {
+    let (complete, remainder) = bytes.as_chunks::<32>();
+    let mut chunks = Vec::with_capacity(capacity);
+    chunks.extend_from_slice(complete);
+    if !remainder.is_empty() {
+        let mut last = [0; 32];
+        last[..remainder.len()].copy_from_slice(remainder);
+        chunks.push(last);
+    }
+    chunks
+}
+
 fn pack_basic<T: Ssz>(values: &[T]) -> Result<Vec<Node>, CodecError> {
+    let capacity = basic_capacity::<T>(values.len())?;
+    if let Some(bytes) = validated_fixed_sequence_bytes(values)? {
+        return Ok(pack_native_bytes(bytes, capacity));
+    }
     let maximum = maximum_encoding(values)?.ok_or(CodecError::InvalidLength)?;
     // One shared child buffer preserves even externally supplied variable encodings;
     // it does not impose a serialization-wide byte budget on root calculation.
     let mut scratch = vec![0; maximum];
     let mut packer = BasicPacker {
-        chunks: Vec::with_capacity(basic_capacity::<T>(values.len())?),
+        chunks: Vec::with_capacity(capacity),
         pending: [0; 32],
         filled: 0,
     };

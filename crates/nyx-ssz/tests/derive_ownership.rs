@@ -1,11 +1,10 @@
-use nyx_ssz::{
-    codec::Ssz,
-    error::{CodecError, DecodeFailure},
-    type_info::TypeDescriptor as D,
-};
+use nyx_ssz::{codec::Ssz, error::CodecError, type_info::TypeDescriptor as D};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
 static DROPS: AtomicUsize = AtomicUsize::new(0);
 static DECODES: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug)]
 struct Owner;
 impl Drop for Owner {
     fn drop(&mut self) {
@@ -13,7 +12,6 @@ impl Drop for Owner {
     }
 }
 impl Ssz for Owner {
-    type DecodeState = Self;
     const TYPE: &'static D = &D::Uint(1);
     fn encoded_len(&self) -> Result<usize, CodecError> {
         Ok(1)
@@ -21,21 +19,19 @@ impl Ssz for Owner {
     fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
         nyx_ssz::encoding::copy(output, &[0])
     }
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self>> {
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
         DECODES.fetch_add(1, Ordering::SeqCst);
         if bytes == [0] {
             Ok(Self)
         } else {
-            Err(DecodeFailure {
-                kind: CodecError::InvalidBoolean,
-                state: Self,
-            })
+            Err(CodecError::InvalidBoolean)
         }
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
         Ok([0; 32])
     }
 }
+
 #[derive(nyx_ssz::Ssz)]
 struct Record {
     first: Owner,
@@ -51,31 +47,31 @@ enum Choice {
 }
 
 #[test]
-fn should_return_every_heterogeneous_owner_when_nested_decoding_fails() {
-    let failure = Record::decode(&[0, 6, 0, 0, 0, 0, 0, 1]).err().unwrap();
-    assert_eq!(failure.kind, CodecError::InvalidBoolean);
+fn should_drop_heterogeneous_prefixes_when_nested_decoding_fails() {
+    DROPS.store(0, Ordering::SeqCst);
+    DECODES.store(0, Ordering::SeqCst);
+    assert_eq!(
+        Record::decode(&[0, 6, 0, 0, 0, 0, 0, 1]).err().unwrap(),
+        CodecError::InvalidBoolean
+    );
     assert_eq!(DECODES.load(Ordering::SeqCst), 3);
-    assert_eq!(DROPS.load(Ordering::SeqCst), 0);
-    assert!(failure.state.first.value.is_some());
-    let nested = failure.state.second.child.as_ref().unwrap();
-    assert_eq!(nested.values.len(), 1);
-    assert!(nested.child.is_some());
-    assert!(failure.state.third.value.is_none());
-    drop(failure);
-    assert_eq!(DROPS.load(Ordering::SeqCst), 3);
-    let refusal = Record::decode(&[0]).err().unwrap();
+    assert_eq!(DROPS.load(Ordering::SeqCst), 2);
+
+    assert_eq!(
+        Record::decode(&[0]).err().unwrap(),
+        CodecError::ScopeTooSmall
+    );
     assert_eq!(DECODES.load(Ordering::SeqCst), 3);
-    drop(refusal);
-    let refusal = Choice::decode(&[2, 1]).err().unwrap();
-    assert_eq!(DROPS.load(Ordering::SeqCst), 3);
-    assert!(refusal.state.is_some());
-    drop(refusal);
-    assert_eq!(DROPS.load(Ordering::SeqCst), 4);
+    assert_eq!(
+        Choice::decode(&[2, 1]).err().unwrap(),
+        CodecError::InvalidBoolean
+    );
+    assert_eq!(DROPS.load(Ordering::SeqCst), 2);
 }
 
+#[derive(Debug)]
 struct Oversized;
 impl Ssz for Oversized {
-    type DecodeState = ();
     const TYPE: &'static D = &D::Vector(&D::Uint(32), usize::MAX);
     fn encoded_len(&self) -> Result<usize, CodecError> {
         Err(CodecError::NativeOutputOverflow)
@@ -83,19 +79,16 @@ impl Ssz for Oversized {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         Err(CodecError::NativeOutputOverflow)
     }
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        Err(DecodeFailure {
-            kind: CodecError::InvalidLength,
-            state: (),
-        })
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
+        Err(CodecError::InvalidLength)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
         Ok([0; 32])
     }
 }
+
 struct Refusal;
 impl Ssz for Refusal {
-    type DecodeState = ();
     const TYPE: &'static D = &D::Boolean;
     fn encoded_len(&self) -> Result<usize, CodecError> {
         Err(CodecError::InvalidBoolean)
@@ -103,16 +96,14 @@ impl Ssz for Refusal {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         Err(CodecError::InvalidBoolean)
     }
-    fn decode(_: &[u8]) -> Result<Self, DecodeFailure<()>> {
-        Err(DecodeFailure {
-            kind: CodecError::InvalidBoolean,
-            state: (),
-        })
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
+        Err(CodecError::InvalidBoolean)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
         Err(CodecError::InvalidBoolean)
     }
 }
+
 #[derive(nyx_ssz::Ssz)]
 struct Deferred {
     huge: Oversized,
@@ -159,7 +150,7 @@ fn should_preserve_protocol_error_precedence_when_a_child_has_oversized_native_s
         Err(CodecError::NativeOutputOverflow)
     );
     assert_eq!(
-        InvalidUnion::decode(&[]).err().unwrap().kind,
+        InvalidUnion::decode(&[]).err().unwrap(),
         CodecError::UnionIncompatible
     );
 }
@@ -179,6 +170,7 @@ mod private {
         }
     }
 }
+
 #[test]
 fn should_allow_public_containers_when_their_field_types_are_private() {
     assert_eq!(private::make().encode().unwrap(), vec![1]);

@@ -13,7 +13,8 @@ Crate publishing remains disabled. This is not a security audit or a claim of pe
 - Host and 32-bit tests; 95.27% workspace line coverage; reproducible Criterion benchmarks.
 
 [Native API and limitations](docs/native-api.md) · [Benchmark results](docs/benchmarks.md) ·
-[Current codec comparison](docs/bulk-codecs.md) · [Small decode](docs/small-decode.md) · [Fixed encode](docs/fixed-encode.md) ·
+[Current codec comparison](docs/bulk-codecs.md) · [Fail-fast decode](docs/fail-fast-decode.md) ·
+[Native integer output](docs/native-sequence-output.md) · [Fixed encode](docs/fixed-encode.md) ·
 [Verification scope](docs/verification.md)
 
 **Current-source Aeneas/Lean verification:** 12 hash-independent gindex/helper-index operations are freshly extracted and kernel checked.
@@ -32,6 +33,14 @@ These new member laws are unproved under [#29](https://github.com/NyxFoundation/
 The provided `Ssz::decode_fixed_sequence` hook adds safe unsigned-integer bulk decoding
 without requiring manual impl changes; its laws are unproved under
 [#32](https://github.com/NyxFoundation/nyx-ssz/issues/32).
+`Ssz::decode` now fails directly with `CodecError`; partial decode-state ownership has been
+removed, and derived variable containers validate offsets with stack metadata. The breaking
+change and measurements are documented in [fail-fast decode](docs/fail-fast-decode.md).
+Aligned little-endian primitive integer lists use a safe validated native copy; the recorded
+12KB mixed decode is 252.586ns versus libssz's 256.937ns in the same five-round batch.
+The provided `Ssz::fixed_sequence_bytes` hook now reuses the same safe native view for
+integer sequence encoding and Merkle packing. Mixed encode improved 3.16×, while Mixed root
+is within 1.05× of libssz; these hook laws remain unproved under #25.
 
 ## Example
 
@@ -97,15 +106,13 @@ implementations have historical proofs; current-source proof status is separate.
 
 ```rust
 use nyx_ssz::{codec::decode, error::CodecError};
-let failure = decode::<u16>(&[0]).unwrap_err();
-assert_eq!(failure.kind, CodecError::InvalidLength);
-assert_eq!(failure.state, ());
+let error = decode::<u16>(&[0]).unwrap_err();
+assert_eq!(error, CodecError::InvalidLength);
 ```
 
-External implementations declare their own `DecodeState`. Error state is returned
-unchanged by the dispatcher; callers decide when to inspect or drop it. Formatting
-reports only the error kind and does not require or reveal the state. There is no
-legacy state-discarding decoder wrapper.
+Decoding is fail-fast and returns `Result<T, CodecError>`. Completed prefixes are
+dropped normally when a later child fails; no partial-value recovery state is built or
+returned. External implementations use the same error-only contract.
 
 ```rust
 use nyx_ssz::{codec::{decode, encode, hash_tree_root},
@@ -120,7 +127,7 @@ assert_eq!(hash_tree_root(&decoded), hash_tree_root(&value));
 
 Construction moves the original allocation without a context bound. Codec calls validate the
 child declaration, including for empty values. Nested Progressive/bounded collections compose;
-failed decoding retains every completed value and the exact nested child state.
+failed decoding drops completed values before returning the first error.
 
 Explicitly bounded Progressive contexts use distinct types; existing unbounded types are unchanged:
 
@@ -183,7 +190,7 @@ assert_eq!(hash_tree_root(&inline).unwrap()[..3], [0, 128, 255]);
 These dedicated types are not generic `Vector/List<u8>` aliases. A `ByteVector` of at most
 32 bytes is copied into the value; larger vectors and every `ByteList` move the accepted
 allocation unchanged. Vectors require a nonzero exact length, while lists permit empty values
-and zero capacity. `Ssz` decoding of inline vectors does not allocate. Failure state is unit. Their dedicated byte descriptors are composite for parent packing
+and zero capacity. `Ssz` decoding of inline vectors does not allocate. Their dedicated byte descriptors are composite for parent packing
 and Merkle-compatible with equal-bound uint8 vectors/lists, but retain the pinned opaque-byte
 wire semantics: unlike generic sequences, standalone byte arrays have no four-byte sequence-size
 envelope. All native bounds and input slices are covered by the proofs, not just allocatable test
@@ -233,27 +240,23 @@ supported. Bytes are borrowed, not copied; only range/offset metadata is allocat
 The parent codec must validate field names, type declarations and field values.
 Ordinary named structs use `#[derive(nyx_ssz::Ssz)]` for complete typed encoding,
 decoding and roots. This lower-level helper alone is not an `Ssz` dictionary.
-Generated conversions/ownership equivalence remains explicitly unproved; see the current scope.
+Generated conversion and fail-fast equivalence remains explicitly unproved; see the current scope.
 
 ## Typed element decoding
 
-Decode already-sliced bodies, retaining ownership on the first element failure:
+Decode already-sliced bodies with the same fail-fast error contract:
 
 ```rust
 use nyx_ssz::{codec::decode_elements, error::CodecError, sequence::fixed_vector_view};
 let view = fixed_vector_view(&[0, 2], 1, 2).unwrap();
-let failure = decode_elements::<bool>(&view).unwrap_err();
-assert_eq!(failure.kind, CodecError::InvalidBoolean);
-assert_eq!(failure.state.values, [false]);
-assert_eq!(failure.state.child, Some(()));
+assert_eq!(decode_elements::<bool>(&view), Err(CodecError::InvalidBoolean));
 ```
 
 This lower-level helper does not choose or validate a containing sequence's type declaration;
 the caller selects its layout before decoding elements. An empty view invokes no element decoder.
-`SequenceDecodeState` returns every completed element and the failing child's exact state.
-The input/view remains borrowed and reusable; no element bytes are copied by the traversal.
-Typed Vector/List decoding selects and validates the containing layout before reusing this
-traversal; separate parent theorems preserve its exact typed prefix and child state.
+Completed elements are dropped if a later decoder fails. The input/view remains borrowed and
+reusable; no element bytes are copied by the traversal. Typed Vector/List decoding selects and
+validates the containing layout before reusing this traversal.
 
 ## Typed storage
 

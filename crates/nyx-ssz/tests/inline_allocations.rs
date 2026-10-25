@@ -36,8 +36,8 @@ fn should_decode_inline_values_without_allocation() {
     drop(ByteVector::<33>::decode(&[9; 33]).unwrap());
     let heap = region.change();
     assert_eq!(heap.allocations, 1, "{heap:?}");
-    let Err(failure) = Header::decode(&encoded[..111]) else {
-        panic!("short header must fail");
-    };
-    assert_eq!(failure.kind, CodecError::InvalidLength);
+    assert_eq!(
+        Header::decode(&encoded[..111]).err().unwrap(),
+        CodecError::InvalidLength
+    );
 }

@@ -5,6 +5,184 @@ use crate::{
     sequence::{offset_spans, BodyRange, SequenceView},
 };
 
+/// Compile-time field positions for generated container decoders.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct DerivedContainerLayout<const N: usize> {
+    header: usize,
+    positions: [usize; N],
+    widths: [Option<usize>; N],
+    variable: bool,
+}
+
+/// One validated generated-container field range.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct DerivedFieldRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Build generated-container layout metadata during constant evaluation.
+#[doc(hidden)]
+pub const fn derived_container_layout<const N: usize>(
+    widths: [Result<Option<usize>, CodecError>; N],
+) -> Result<DerivedContainerLayout<N>, CodecError> {
+    let mut variable = false;
+    let mut index = 0;
+    while index < N {
+        if matches!(widths[index], Ok(None)) {
+            variable = true;
+        }
+        index += 1;
+    }
+
+    let fault = if variable {
+        CodecError::ScopeTooSmall
+    } else {
+        CodecError::InvalidLength
+    };
+    let mut header = 0usize;
+    let mut positions = [0usize; N];
+    let mut exact = [None; N];
+    index = 0;
+    while index < N {
+        positions[index] = header;
+        let width = match widths[index] {
+            Ok(Some(width)) => {
+                exact[index] = Some(width);
+                width
+            }
+            Ok(None) => 4,
+            Err(CodecError::SizeOverflow) => return Err(fault),
+            Err(error) => return Err(error),
+        };
+        header = match header.checked_add(width) {
+            Some(next) => next,
+            None => return Err(fault),
+        };
+        index += 1;
+    }
+    Ok(DerivedContainerLayout {
+        header,
+        positions,
+        widths: exact,
+        variable,
+    })
+}
+
+/// Validate generated-container offsets and return stack-allocated field ranges.
+#[doc(hidden)]
+#[inline]
+pub fn derived_container_ranges<const N: usize>(
+    input: &[u8],
+    layout: Result<DerivedContainerLayout<N>, CodecError>,
+) -> Result<[DerivedFieldRange; N], CodecError> {
+    if input.len() as u128 >= 4_294_967_296 {
+        return Err(CodecError::SizeOverflow);
+    }
+    let layout = layout?;
+    validate_derived_scope(input.len(), &layout)?;
+    let (mut ranges, first) = read_derived_slots(input, &layout);
+    validate_derived_offsets(input.len(), &layout, &ranges, first)?;
+    finish_derived_ranges(input.len(), &layout, &mut ranges);
+    Ok(ranges)
+}
+
+#[inline]
+fn validate_derived_scope<const N: usize>(
+    input_len: usize,
+    layout: &DerivedContainerLayout<N>,
+) -> Result<(), CodecError> {
+    if input_len < layout.header {
+        return Err(if layout.variable {
+            CodecError::ScopeTooSmall
+        } else {
+            CodecError::InvalidLength
+        });
+    }
+    if !layout.variable && input_len != layout.header {
+        return Err(CodecError::InvalidLength);
+    }
+    Ok(())
+}
+
+#[inline]
+fn read_derived_slots<const N: usize>(
+    input: &[u8],
+    layout: &DerivedContainerLayout<N>,
+) -> ([DerivedFieldRange; N], Option<usize>) {
+    let mut ranges = [DerivedFieldRange { start: 0, end: 0 }; N];
+    let mut first = None;
+    let mut index = 0;
+    while index < N {
+        let position = layout.positions[index];
+        if let Some(width) = layout.widths[index] {
+            ranges[index] = DerivedFieldRange {
+                start: position,
+                end: position + width,
+            };
+        } else {
+            let bytes = [
+                input[position],
+                input[position + 1],
+                input[position + 2],
+                input[position + 3],
+            ];
+            let offset = u32::from_le_bytes(bytes) as usize;
+            first.get_or_insert(offset);
+            ranges[index].start = offset;
+        }
+        index += 1;
+    }
+    (ranges, first)
+}
+
+#[inline]
+fn validate_derived_offsets<const N: usize>(
+    input_len: usize,
+    layout: &DerivedContainerLayout<N>,
+    ranges: &[DerivedFieldRange; N],
+    first: Option<usize>,
+) -> Result<(), CodecError> {
+    if first.is_some_and(|offset| offset != layout.header) {
+        return Err(CodecError::FirstOffset);
+    }
+    let mut previous = None;
+    let mut index = 0;
+    while index < N {
+        if layout.widths[index].is_none() {
+            let offset = ranges[index].start;
+            if previous.is_some_and(|value| offset < value) {
+                return Err(CodecError::OffsetUnordered);
+            }
+            previous = Some(offset);
+        }
+        index += 1;
+    }
+    if previous.is_some_and(|last| last > input_len) {
+        return Err(CodecError::OffsetPastScope);
+    }
+    Ok(())
+}
+
+#[inline]
+fn finish_derived_ranges<const N: usize>(
+    input_len: usize,
+    layout: &DerivedContainerLayout<N>,
+    ranges: &mut [DerivedFieldRange; N],
+) {
+    let mut next = input_len;
+    let mut index = N;
+    while index > 0 {
+        index -= 1;
+        if layout.widths[index].is_none() {
+            ranges[index].end = next;
+            next = ranges[index].start;
+        }
+    }
+}
+
 /// Borrow field-order byte ranges using truthful child fixed-size metadata.
 ///
 /// `Ok(None)` denotes a variable field. `Err(SizeOverflow)` denotes a fixed

@@ -58,15 +58,18 @@ fn invalid_lengths_and_zero_declarations_have_exact_faults() {
         ByteList::<2>::from_bytes(vec![1, 2, 3]).unwrap_err(),
         CodecError::OverLimit
     );
-    let fault = decode::<ByteVector<0>>(&[1]).unwrap_err();
-    assert_eq!(fault.kind, CodecError::EmptyVector);
-    assert_eq!(fault.state, ());
-    let fault = decode::<ByteVector<2>>(&[1]).unwrap_err();
-    assert_eq!(fault.kind, CodecError::InvalidLength);
-    assert_eq!(fault.state, ());
-    let fault = decode::<ByteList<0>>(&[1]).unwrap_err();
-    assert_eq!(fault.kind, CodecError::OverLimit);
-    assert_eq!(fault.state, ());
+    assert_eq!(
+        decode::<ByteVector<0>>(&[1]).unwrap_err(),
+        CodecError::EmptyVector
+    );
+    assert_eq!(
+        decode::<ByteVector<2>>(&[1]).unwrap_err(),
+        CodecError::InvalidLength
+    );
+    assert_eq!(
+        decode::<ByteList<0>>(&[1]).unwrap_err(),
+        CodecError::OverLimit
+    );
 }
 
 #[test]
@@ -150,7 +153,7 @@ fn metadata_and_huge_bounds_do_not_require_huge_allocations_or_formatting() {
         CodecError::InvalidLength
     );
     assert_eq!(
-        decode::<ByteVector<{ usize::MAX }>>(&[]).unwrap_err().kind,
+        decode::<ByteVector<{ usize::MAX }>>(&[]).unwrap_err(),
         CodecError::InvalidLength
     );
 }

@@ -1,7 +1,7 @@
 //! Typed SSZ codecs. External implementations require their own correctness proof.
 
 use crate::{
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     scalar, tree_hash,
     type_info::{self, TypeDescriptor},
     U256,
@@ -12,8 +12,6 @@ use crate::{
 /// Native conformance tests and formal proof coverage are tracked separately.
 /// Implementing or deriving this trait does not automatically certify its laws.
 pub trait Ssz: Sized {
-    /// Owned partial values returned on failure; never discarded inside decode.
-    type DecodeState;
     /// Immutable declaration used for type validation and layout metadata.
     const TYPE: &'static TypeDescriptor;
     /// Exact reference bytes, its protocol error, or `NativeOutputOverflow` iff
@@ -32,24 +30,44 @@ pub trait Ssz: Sized {
     /// Wrong destination length is rejected before writing. Other failures may leave
     /// partial writes; callers must discard the destination on error.
     fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError>;
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>>;
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError>;
+    /// Borrow the canonical concatenated bytes of a fixed-width sequence when the
+    /// representation permits a safe native view. Implementations returning `Some`
+    /// guarantee exact element order, width and canonical byte order for every value.
+    fn fixed_sequence_bytes(values: &[Self]) -> Option<&[u8]> {
+        let _ = values;
+        None
+    }
     /// Decode fixed-width values under the four-byte sequence envelope, without
     /// an additional element-count bound. Success must return one value per
-    /// declared width. Layout errors retain an empty state; child errors retain
-    /// the completed prefix and child state. Variable declarations are rejected.
-    /// Integer implementations use safe bulk conversion; other types retain
-    /// their individual decode callbacks and owned refusal states.
-    fn decode_fixed_sequence(
-        bytes: &[u8],
-    ) -> Result<Vec<Self>, DecodeFailure<SequenceDecodeState<Self>>> {
+    /// declared width. Variable declarations are rejected. Integer implementations
+    /// use safe bulk conversion; other types retain their individual callbacks.
+    fn decode_fixed_sequence(bytes: &[u8]) -> Result<Vec<Self>, CodecError> {
         decode_fixed_sequence_default(bytes)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError>;
 }
 
 /// Return a fixed width, variable layout (`Ok(None)`), or size overflow.
-pub fn fixed_size<T: Ssz>() -> Result<Option<usize>, CodecError> {
+pub const fn fixed_size<T: Ssz>() -> Result<Option<usize>, CodecError> {
     type_info::fixed_size(T::TYPE)
+}
+
+pub(crate) fn validated_fixed_sequence_bytes<T: Ssz>(
+    values: &[T],
+) -> Result<Option<&[u8]>, CodecError> {
+    let Some(bytes) = T::fixed_sequence_bytes(values) else {
+        return Ok(None);
+    };
+    let width = fixed_size::<T>()?.ok_or(CodecError::BadDeclaration)?;
+    let expected = values
+        .len()
+        .checked_mul(width)
+        .ok_or(CodecError::SizeOverflow)?;
+    if bytes.len() != expected {
+        return Err(CodecError::InvalidLength);
+    }
+    Ok(Some(bytes))
 }
 
 /// Whether declared values pack together before collection Merkleization.
@@ -63,8 +81,32 @@ pub fn is_compatible<Left: Ssz, Right: Ssz>() -> bool {
 }
 
 /// Check a type declaration without invoking any value codec.
-pub fn validate_type<T: Ssz>() -> Result<(), CodecError> {
+pub const fn validate_type<T: Ssz>() -> Result<(), CodecError> {
     type_info::validate(T::TYPE)
+}
+
+/// Sum compile-time fixed widths for generated container decoders.
+#[doc(hidden)]
+pub const fn fixed_layout<const N: usize>(
+    widths: [Result<Option<usize>, CodecError>; N],
+) -> Result<Option<(usize, [usize; N])>, CodecError> {
+    let mut total = 0usize;
+    let mut exact = [0usize; N];
+    let mut index = 0;
+    while index < N {
+        match widths[index] {
+            Ok(Some(width)) => match total.checked_add(width) {
+                Some(next) => {
+                    exact[index] = width;
+                    total = next;
+                }
+                None => return Err(CodecError::InvalidLength),
+            },
+            _ => return Ok(None),
+        }
+        index += 1;
+    }
+    Ok(Some((total, exact)))
 }
 
 /// Encode a typed value using its codec.
@@ -72,40 +114,23 @@ pub fn encode<T: Ssz>(value: &T) -> Result<Vec<u8>, CodecError> {
     value.encode()
 }
 
-/// Decode a typed value, returning ownership of partial state on failure.
-pub fn decode<T: Ssz>(bytes: &[u8]) -> Result<T, DecodeFailure<T::DecodeState>> {
+/// Decode a typed value.
+pub fn decode<T: Ssz>(bytes: &[u8]) -> Result<T, CodecError> {
     T::decode(bytes)
 }
 
-/// Owned values retained when a sequence element refuses its byte range.
-pub struct SequenceDecodeState<T: Ssz> {
-    pub values: Vec<T>,
-    pub child: Option<T::DecodeState>,
-}
-
-/// Decode validated body ranges, retaining every completed value on failure.
+/// Decode validated body ranges.
 ///
 /// The view validates layout, not the element type declaration. Each element
 /// codec validates its own value; an empty view invokes no element codecs.
 pub fn decode_elements<T: Ssz>(
     view: &crate::sequence::SequenceView<'_>,
-) -> Result<Vec<T>, DecodeFailure<SequenceDecodeState<T>>> {
-    decode_ranges(view.input, &view.ranges)
-}
-
-fn decode_ranges<T: Ssz>(
-    input: &[u8],
-    ranges: &[crate::sequence::BodyRange],
-) -> Result<Vec<T>, DecodeFailure<SequenceDecodeState<T>>> {
-    let mut values = Vec::new();
+) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::with_capacity(view.ranges.len());
     let mut index = 0;
-    while index < ranges.len() {
-        let range = &ranges[index];
-        let value = match decode_range::<T>(input, range.start, range.end) {
-            Ok(value) => value,
-            Err(failure) => return Err(sequence_failure(values, failure)),
-        };
-        values.push(value);
+    while index < view.ranges.len() {
+        let range = &view.ranges[index];
+        values.push(T::decode(&view.input[range.start..range.end])?);
         index += 1;
     }
     Ok(values)
@@ -116,17 +141,11 @@ pub(crate) fn decode_fixed<T: Ssz>(
     input: &[u8],
     width: usize,
     count: usize,
-) -> Result<Vec<T>, DecodeFailure<SequenceDecodeState<T>>> {
+) -> Result<Vec<T>, CodecError> {
     let mut values = Vec::new();
     for index in 0..count {
         let start = index * width;
-        let value = match decode_range::<T>(input, start, start + width) {
-            Ok(value) => value,
-            Err(failure) => return Err(sequence_failure(values, failure)),
-        };
-        // Capacity is only a hint: a larger Rust representation must not make
-        // an early child error panic by reserving the entire potential result.
-        // Never allocate before first-child success or restrict the decode count.
+        let value = T::decode(&input[start..start + width])?;
         if index == 0 {
             let capacity = count.min(input.len() / core::mem::size_of::<T>().max(1));
             values.reserve_exact(capacity);
@@ -136,66 +155,59 @@ pub(crate) fn decode_fixed<T: Ssz>(
     Ok(values)
 }
 
-fn decode_fixed_sequence_default<T: Ssz>(
-    input: &[u8],
-) -> Result<Vec<T>, DecodeFailure<SequenceDecodeState<T>>> {
-    use crate::collection_codec::empty_failure;
-    validate_type::<T>().map_err(empty_failure::<T>)?;
+fn decode_fixed_sequence_default<T: Ssz>(input: &[u8]) -> Result<Vec<T>, CodecError> {
+    validate_type::<T>()?;
     match fixed_size::<T>() {
         Ok(Some(width)) => {
-            let count = crate::sequence::fixed_list_count(input.len(), width, None)
-                .map_err(empty_failure::<T>)?;
+            let count = crate::sequence::fixed_list_count(input.len(), width, None)?;
             decode_fixed(input, width, count)
         }
-        Ok(None) => Err(empty_failure::<T>(CodecError::BadDeclaration)),
+        Ok(None) => Err(CodecError::BadDeclaration),
         Err(CodecError::SizeOverflow) => {
             if input.len() as u128 >= 4_294_967_296 {
-                return Err(empty_failure::<T>(CodecError::SizeOverflow));
+                return Err(CodecError::SizeOverflow);
             }
             if input.is_empty() {
                 Ok(Vec::new())
             } else {
-                Err(empty_failure::<T>(CodecError::ScopeUndivided))
+                Err(CodecError::ScopeUndivided)
             }
         }
-        Err(error) => Err(empty_failure::<T>(error)),
+        Err(error) => Err(error),
     }
 }
 
-fn decode_integer_sequence<T: Ssz, const WIDTH: usize>(
+fn decode_integer_sequence<T: Ssz + bytemuck::Pod, const WIDTH: usize>(
     input: &[u8],
     convert: impl Fn([u8; WIDTH]) -> T,
-) -> Result<Vec<T>, DecodeFailure<SequenceDecodeState<T>>> {
-    crate::sequence::fixed_list_count(input.len(), WIDTH, None)
-        .map_err(crate::collection_codec::empty_failure::<T>)?;
-    Ok(input
+) -> Result<Vec<T>, CodecError> {
+    crate::sequence::fixed_list_count(input.len(), WIDTH, None)?;
+    #[cfg(target_endian = "little")]
+    if let Ok(values) = bytemuck::try_cast_slice::<u8, T>(input) {
+        return Ok(values.to_vec());
+    }
+    Ok(collect_integer_sequence(input, convert))
+}
+
+fn decode_integer_sequence_scalar<T, const WIDTH: usize>(
+    input: &[u8],
+    convert: impl Fn([u8; WIDTH]) -> T,
+) -> Result<Vec<T>, CodecError> {
+    crate::sequence::fixed_list_count(input.len(), WIDTH, None)?;
+    Ok(collect_integer_sequence(input, convert))
+}
+
+fn collect_integer_sequence<T, const WIDTH: usize>(
+    input: &[u8],
+    convert: impl Fn([u8; WIDTH]) -> T,
+) -> Vec<T> {
+    input
         .as_chunks::<WIDTH>()
         .0
         .iter()
         .copied()
         .map(convert)
-        .collect())
-}
-
-fn sequence_failure<T: Ssz>(
-    values: Vec<T>,
-    failure: DecodeFailure<T::DecodeState>,
-) -> DecodeFailure<SequenceDecodeState<T>> {
-    DecodeFailure {
-        kind: failure.kind,
-        state: SequenceDecodeState {
-            values,
-            child: Some(failure.state),
-        },
-    }
-}
-
-fn decode_range<T: Ssz>(
-    input: &[u8],
-    start: usize,
-    end: usize,
-) -> Result<T, DecodeFailure<T::DecodeState>> {
-    T::decode(&input[start..end])
+        .collect()
 }
 
 /// Compute a typed value's SSZ root using its codec.
@@ -213,9 +225,12 @@ fn scalar_error(error: scalar::ScalarError) -> CodecError {
 macro_rules! integer_bulk_method {
     (bool) => {};
     ($type:ident) => {
-        fn decode_fixed_sequence(
-            input: &[u8],
-        ) -> Result<Vec<Self>, DecodeFailure<SequenceDecodeState<Self>>> {
+        #[cfg(target_endian = "little")]
+        fn fixed_sequence_bytes(values: &[Self]) -> Option<&[u8]> {
+            Some(bytemuck::cast_slice(values))
+        }
+
+        fn decode_fixed_sequence(input: &[u8]) -> Result<Vec<Self>, CodecError> {
             decode_integer_sequence::<Self, { core::mem::size_of::<$type>() }>(
                 input,
                 <$type>::from_le_bytes,
@@ -227,7 +242,6 @@ macro_rules! integer_bulk_method {
 macro_rules! basic_codec {
     ($type:ident, $declaration:expr, $encode:ident, $decode:ident, $root:ident) => {
         impl Ssz for $type {
-            type DecodeState = ();
             const TYPE: &'static TypeDescriptor = &$declaration;
 
             integer_bulk_method!($type);
@@ -240,14 +254,8 @@ macro_rules! basic_codec {
                 crate::encoding::copy(output, &scalar::$encode(*self))
             }
 
-            fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
-                match scalar::$decode(bytes) {
-                    Ok(value) => Ok(value),
-                    Err(error) => Err(DecodeFailure {
-                        kind: scalar_error(error),
-                        state: (),
-                    }),
-                }
+            fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+                scalar::$decode(bytes).map_err(scalar_error)
             }
 
             fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -301,13 +309,10 @@ basic_codec!(
 );
 
 impl Ssz for U256 {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(32);
 
-    fn decode_fixed_sequence(
-        input: &[u8],
-    ) -> Result<Vec<Self>, DecodeFailure<SequenceDecodeState<Self>>> {
-        decode_integer_sequence::<Self, 32>(input, Self::from_le_bytes::<32>)
+    fn decode_fixed_sequence(input: &[u8]) -> Result<Vec<Self>, CodecError> {
+        decode_integer_sequence_scalar::<Self, 32>(input, Self::from_le_bytes::<32>)
     }
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -318,14 +323,8 @@ impl Ssz for U256 {
         crate::encoding::copy(output, &scalar::encode_u256(self))
     }
 
-    fn decode(bytes: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
-        match scalar::decode_u256(bytes) {
-            Ok(value) => Ok(value),
-            Err(error) => Err(DecodeFailure {
-                kind: scalar_error(error),
-                state: (),
-            }),
-        }
+    fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        scalar::decode_u256(bytes).map_err(scalar_error)
     }
 
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

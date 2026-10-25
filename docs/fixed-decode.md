@@ -1,12 +1,15 @@
 ---
 title: Fixed-width decode optimization
-last_updated: 2026-10-23
+last_updated: 2026-10-24
 tags:
   - ssz
   - rust
   - performance
 ---
 # Fixed-width decode optimization
+
+This is historical measurement for the partial-state API. The current fail-fast API drops
+completed prefixes on error while retaining the same wire validation.
 
 This records the initial table-free stage. Newer integer bulk conversion results are in
 [bulk codec optimization](bulk-codecs.md).

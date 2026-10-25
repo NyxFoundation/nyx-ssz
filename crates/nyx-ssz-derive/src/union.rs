@@ -1,4 +1,4 @@
-use crate::{attributes, bounded_generics, state_name};
+use crate::{attributes, bounded_generics};
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashSet;
@@ -75,20 +75,16 @@ pub fn expand(
     krate: &TokenStream,
 ) -> syn::Result<TokenStream> {
     let variants = variants(data)?;
-    let names: Vec<_> = variants.iter().map(|v| &v.name).collect();
     let types: Vec<_> = variants.iter().map(|v| &v.ty).collect();
     let selectors = variants.iter().map(|v| v.selector);
     let generics = bounded_generics(input, &types, krate);
     let (params, args, bounds) = generics.split_for_impl();
     let name = &input.ident;
-    let state = state_name(input);
     let encode = encode_method(&variants, krate);
-    let decode = decode_method(&variants, &state, krate);
+    let decode = decode_method(&variants, krate);
     let root = root_method(&variants, krate);
     Ok(quote! {
-        pub enum #state #params #bounds { #(#names(<#types as #krate::codec::Ssz>::DecodeState),)* }
         impl #params #krate::codec::Ssz for #name #args #bounds {
-            type DecodeState = ::core::option::Option<#state #args>;
             const TYPE: &'static #krate::type_info::TypeDescriptor = &#krate::type_info::TypeDescriptor::CompatibleUnion(&[#(#selectors,)*], &[#(<#types as #krate::codec::Ssz>::TYPE,)*]);
             #encode #decode #root
         }
@@ -134,22 +130,22 @@ fn root_method(variants: &[Variant], krate: &TokenStream) -> TokenStream {
     }
 }
 
-fn decode_method(variants: &[Variant], state: &Ident, krate: &TokenStream) -> TokenStream {
-    let arms = variants.iter().map(|v| {
-        let name=&v.name; let ty=&v.ty; let tag=v.selector as u8;
-        quote!(#tag => <#ty as #krate::codec::Ssz>::decode(body).map(Self::#name).map_err(|failure| #krate::error::DecodeFailure { kind: failure.kind, state: ::core::option::Option::Some(#state::#name(failure.state)) }),)
+fn decode_method(variants: &[Variant], krate: &TokenStream) -> TokenStream {
+    let arms = variants.iter().map(|variant| {
+        let name = &variant.name;
+        let ty = &variant.ty;
+        let tag = variant.selector as u8;
+        quote!(#tag => <#ty as #krate::codec::Ssz>::decode(body).map(Self::#name),)
     });
     quote! {
-        fn decode(bytes: &[u8]) -> ::core::result::Result<Self, #krate::error::DecodeFailure<Self::DecodeState>> {
-            if let ::core::result::Result::Err(kind) = #krate::codec::validate_type::<Self>() {
-                return ::core::result::Result::Err(#krate::error::DecodeFailure { kind, state: ::core::option::Option::None });
-            }
+        fn decode(bytes: &[u8]) -> ::core::result::Result<Self, #krate::error::CodecError> {
+            const { #krate::codec::validate_type::<Self>() }?;
             let ::core::option::Option::Some((&selector, body)) = bytes.split_first() else {
-                return ::core::result::Result::Err(#krate::error::DecodeFailure { kind: #krate::error::CodecError::NoSelector, state: ::core::option::Option::None });
+                return ::core::result::Result::Err(#krate::error::CodecError::NoSelector);
             };
             match selector {
                 #(#arms)*
-                _ => ::core::result::Result::Err(#krate::error::DecodeFailure { kind: #krate::error::CodecError::UnknownSelector, state: ::core::option::Option::None }),
+                _ => ::core::result::Result::Err(#krate::error::CodecError::UnknownSelector),
             }
         }
     }

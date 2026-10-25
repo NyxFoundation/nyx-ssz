@@ -7,7 +7,7 @@
 use crate::{
     bytes::{self, ByteError},
     codec::Ssz,
-    error::{CodecError, DecodeFailure},
+    error::CodecError,
     tree_hash,
     type_info::TypeDescriptor,
 };
@@ -141,7 +141,6 @@ mod ssz {
     use super::*;
 
     impl<const N: usize> Ssz for ByteVector<N> {
-        type DecodeState = ();
         const TYPE: &'static TypeDescriptor = &TypeDescriptor::ByteVector(N);
 
         fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -166,14 +165,10 @@ mod ssz {
             crate::encoding::copy(output, bytes)
         }
 
-        fn decode(input: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
-            match bytes::decode_byte_vector(input, N) {
-                Ok(bytes) => Ok(Self::from_slice(bytes)),
-                Err(error) => Err(DecodeFailure {
-                    kind: byte_error(error),
-                    state: (),
-                }),
-            }
+        fn decode(input: &[u8]) -> Result<Self, CodecError> {
+            bytes::decode_byte_vector(input, N)
+                .map(Self::from_slice)
+                .map_err(byte_error)
         }
 
         fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -182,7 +177,6 @@ mod ssz {
     }
 
     impl<const MAX: usize> Ssz for ByteList<MAX> {
-        type DecodeState = ();
         const TYPE: &'static TypeDescriptor = &TypeDescriptor::ByteList(MAX);
 
         fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -195,17 +189,13 @@ mod ssz {
             crate::encoding::copy(output, bytes)
         }
 
-        fn decode(input: &[u8]) -> Result<Self, DecodeFailure<Self::DecodeState>> {
-            match bytes::decode_byte_list(input, MAX) {
-                Ok(bytes) => Ok(Self {
+        fn decode(input: &[u8]) -> Result<Self, CodecError> {
+            bytes::decode_byte_list(input, MAX)
+                .map(|bytes| Self {
                     bytes: copy_bytes(bytes),
                     _bound: [(); MAX],
-                }),
-                Err(error) => Err(DecodeFailure {
-                    kind: byte_error(error),
-                    state: (),
-                }),
-            }
+                })
+                .map_err(byte_error)
         }
 
         fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

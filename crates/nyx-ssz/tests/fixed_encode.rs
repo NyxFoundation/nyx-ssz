@@ -2,7 +2,6 @@ use nyx_ssz::{bytecollections::ByteVector, codec::Ssz, error::CodecError};
 
 struct Overflowing;
 impl Ssz for Overflowing {
-    type DecodeState = ();
     const TYPE: &'static nyx_ssz::type_info::TypeDescriptor =
         &nyx_ssz::type_info::TypeDescriptor::Uint(1);
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -11,7 +10,7 @@ impl Ssz for Overflowing {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         Err(CodecError::NativeOutputOverflow)
     }
-    fn decode(_: &[u8]) -> Result<Self, nyx_ssz::error::DecodeFailure<()>> {
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
         Ok(Self)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
@@ -21,7 +20,6 @@ impl Ssz for Overflowing {
 
 struct BadBool;
 impl Ssz for BadBool {
-    type DecodeState = ();
     const TYPE: &'static nyx_ssz::type_info::TypeDescriptor =
         &nyx_ssz::type_info::TypeDescriptor::Boolean;
     fn encoded_len(&self) -> Result<usize, CodecError> {
@@ -30,7 +28,7 @@ impl Ssz for BadBool {
     fn encode_into(&self, _: &mut [u8]) -> Result<(), CodecError> {
         Err(CodecError::InvalidBoolean)
     }
-    fn decode(_: &[u8]) -> Result<Self, nyx_ssz::error::DecodeFailure<()>> {
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
         Ok(Self)
     }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {

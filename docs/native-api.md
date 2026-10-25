@@ -1,6 +1,6 @@
 ---
 title: Native SSZ API
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 tags:
   - ssz
   - rust
@@ -81,14 +81,13 @@ protocol-fault precedence, and never implement either by calling the default `en
 For a simple wrapper, delegate both methods to the wrapped codec:
 
 ```rust
-use nyx_ssz::{codec::Ssz, error::{CodecError, DecodeFailure}, type_info::TypeDescriptor};
+use nyx_ssz::{codec::Ssz, error::CodecError, type_info::TypeDescriptor};
 struct Counter(u64);
 impl Ssz for Counter {
-    type DecodeState = ();
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(8);
     fn encoded_len(&self) -> Result<usize, CodecError> { self.0.encoded_len() }
     fn encode_into(&self, out: &mut [u8]) -> Result<(), CodecError> { self.0.encode_into(out) }
-    fn decode(input: &[u8]) -> Result<Self, DecodeFailure<()>> { u64::decode(input).map(Self) }
+    fn decode(input: &[u8]) -> Result<Self, CodecError> { u64::decode(input).map(Self) }
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> { self.0.hash_tree_root() }
 }
 assert_eq!(Counter(42).encode().unwrap(), 42_u64.to_le_bytes());
@@ -109,8 +108,8 @@ is resolved. The 12 hash-independent current-source proofs remain checked.
 
 Typed Vector/List and both ProgressiveList variants validate the entire fixed layout
 before invoking any child decoder, then read element slices directly without a
-temporary range table. Variable-width layouts keep their existing offset validation.
-The public `SequenceView` API and all error/ownership types are unchanged.
+temporary range table. Derived variable-width containers use compile-time field positions
+and stack-allocated ranges instead of `Vec` offset/range/span metadata.
 
 Decoded byte/bit storage uses standard bulk copying into its owned allocation.
 Generic fixed sequence decoding reserves its output only after the first child succeeds.
@@ -128,9 +127,10 @@ All-fixed, non-progressive containers validate the declaration and exact body le
 split field slices directly. They do not build a range table. Encoding of the same containers
 validates every child in order, applies the four-byte envelope, and writes field bytes directly.
 A deferred native overflow still becomes `SizeOverflow` only after later protocol errors.
-Variable and progressive containers keep `container_view` and `ContainerWriter`. A width sum
-that overflows `usize` is `InvalidLength`, and inputs of at least four gigabytes remain
-`SizeOverflow`, both before any field decoder. Field failures still retain completed owners.
+Variable and progressive encoding retains `ContainerWriter`; variable decoding uses validated
+stack ranges. A width sum that overflows `usize` is `InvalidLength`, and inputs of at least four
+gigabytes remain `SizeOverflow`, both before any field decoder. Completed fields are dropped
+normally if a later field fails.
 
 `ByteVector<N>` for `N <= 32` stores those bytes inline. `from_bytes` therefore does not
 preserve the input allocation at those sizes. `N > 32` and every `ByteList` still move the
@@ -138,41 +138,49 @@ accepted `Vec`. Decode of an inline vector performs no allocation. These layout 
 native-tested and remain under the unproved codec backlog in
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25).
 
+## Fixed-sequence byte hook
+
+`Ssz::fixed_sequence_bytes(values)` is a provided optimization hook. The default returns
+`None`, so existing manual implementations keep element-wise validation and encoding.
+On little-endian targets, u8 through u128 return a borrowed canonical byte view through
+safe `bytemuck::cast_slice`; boolean, U256 and big-endian targets keep the scalar path.
+
+Parents verify that a returned view matches the declared fixed width and element count.
+Encoding copies the complete view once, while basic collection roots split it directly into
+32-byte Merkle chunks. No borrowed bytes escape the source slice and no crate-local unsafe
+code is used. The hook contract and optimized parent equivalence are unproved under
+[#25](https://github.com/NyxFoundation/nyx-ssz/issues/25). See
+[native integer sequence output](native-sequence-output.md).
+
 ## Fixed-sequence decode hook
 
 `Ssz::decode_fixed_sequence(input)` decodes a sequence of a fixed-width type
 under the standard four-byte envelope, without an extra element-count bound, and
-returns `Vec<Self>` or the usual `SequenceDecodeState<Self>` failure.
-This is a provided method: existing manual implementations and derive users need
-no new implementation. Its generic default keeps individual decode callbacks and
-every owned failure prefix. Variable-width declarations return `BadDeclaration`.
+returns `Result<Vec<Self>, CodecError>`. This is a provided method: existing manual
+implementations and derive users need no override. Its generic default keeps individual
+decode callbacks. Variable-width declarations return `BadDeclaration`.
 
-Unsigned integer implementations (u8 through U256) override it with safe fixed-byte
-array conversion and exact-size collection. No type-punning, crate-local unsafe,
-alignment assumption or little-endian-only interpretation is used. Boolean values
-keep per-element validity checking and prefix retention.
+Unsigned integer implementations override it with exact-size collection. On little-endian
+targets, aligned u8 through u128 input uses `bytemuck::try_cast_slice` followed by a safe
+slice clone; unaligned input, big-endian targets and U256 retain fixed-byte conversion.
+There is no crate-local unsafe code, and alignment is checked rather than assumed. Boolean
+values keep per-element validity checking.
 
 Typed parents validate declaration, exact count/alignment, capacity and their
-four-byte envelope before dispatch. Returned success counts are checked; if a
-custom override returns the wrong count, `InvalidLength` retains all returned
-owners in the failure instead of dropping them. Overrides must obey the same
-fixed-sequence bytes, errors and ownership contract as the generic implementation.
+four-byte envelope before dispatch. Returned success counts are checked; a custom
+override returning the wrong count produces `InvalidLength` and drops the returned
+values. Overrides must obey the same fixed-sequence bytes and error contract.
 
 The member and integer-override laws are **unproved** under
 [#32](https://github.com/NyxFoundation/nyx-ssz/issues/32).
 See [bulk codec results](bulk-codecs.md) for all three optimization stages.
 
-## Failure ownership
+## Decode failures
 
-A derived struct's `DecodeState` has one `FieldDecodeState<T>` per Rust field:
-`value: Option<T>` retains a completed field, and `child: Option<T::DecodeState>`
-retains the refusing child's state. Later fields remain empty. Layout/type refusals
-contain no decoded fields. No completed or nested owner is destroyed inside a refusal.
-
-A union returns `None` for declaration/layout refusal, or `Some(state)` with the
-matching variant containing the selected child's state. State types are exposed through
-`<T as Ssz>::DecodeState`, not by a generated global name. Callers control when to
-inspect, move or drop returned state.
+`Ssz::decode` returns `Result<Self, CodecError>`. There is no associated decode-state
+type and no generated failure-state structure. Derived containers and unions stop at the
+first child error; Rust drops already completed values before the error is returned.
+This keeps the success path smaller and makes manual implementations use one error model.
 
 ## Paths, nodes and proofs
 
@@ -202,6 +210,6 @@ All padding is sparse. Index overflow is an error, never truncation.
 
 All 4,601 immutable official corpus cases are checked, including every Container and
 ProgressiveContainer fixture. The pinned corpus has no CompatibleUnion family; independent
-tests cover selectors, compatibility, roots, malformed bytes, generics and failure ownership.
+tests cover selectors, compatibility, roots, malformed bytes, generics and fail-fast drops.
 Allocator exhaustion, cyclic external static declarations, arbitrary external trait
 implementations and a production security audit are outside the correctness claim.

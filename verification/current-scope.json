@@ -166,6 +166,7 @@
   "unproved_trait_members": [
     "nyx_ssz::codec::Ssz::encoded_len",
     "nyx_ssz::codec::Ssz::encode_into",
+    "nyx_ssz::codec::Ssz::fixed_sequence_bytes",
     "nyx_ssz::codec::Ssz::decode_fixed_sequence"
   ]
 }
