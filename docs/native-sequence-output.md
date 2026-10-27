@@ -1,6 +1,6 @@
 ---
 title: Native integer sequence encoding and Merkle packing
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 tags:
   - ssz
   - rust
@@ -21,8 +21,9 @@ and reduces a 1,024-u64 root from two packing allocations to one chunk-buffer al
 
 External codecs inherit `None` and retain the existing validated element loop. Boolean,
 U256 and big-endian targets also retain canonical scalar conversion. A non-default hook is
-checked against the declared fixed width and element count before use. The crate continues
-to forbid unsafe code.
+checked against the declared fixed width and element count before use. At this recorded
+revision the crate still forbade unsafe code; the later audited unaligned decode copy is
+documented in [Native SSZ API](native-api.md#fixed-sequence-decode-hook).
 
 ## Observed timing
 

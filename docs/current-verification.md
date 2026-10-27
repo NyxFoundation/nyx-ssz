@@ -1,6 +1,6 @@
 ---
 title: Current-source proof scope and explicit skips
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 tags:
   - ssz
   - aeneas
@@ -57,22 +57,25 @@ unproved derive obligations.
   See `verification/rustcrypto-probe/README.md` for reproduction. No opaque-hash axiom,
   forced portable backend or local runtime fallback is introduced.
 - [#29: direct encoding laws](https://github.com/NyxFoundation/nyx-ssz/issues/29):
-  required `encoded_len` and `encode_into` methods, the default allocating bridge and
-  generated writes are unproved. The member inventory checks real inherited default bodies.
+  required `encoded_len`, `encode_into` and `encode_fixed_sequence` methods, the default
+  allocating bridge, fused sequence writes and generated bulk writes are unproved. The member
+  inventory checks real inherited default bodies.
   The full gate rejects the historical `CodecLaw` for extended traits rather than treating
   coverage of encode/decode/root as proof of length or destination behavior.
 - [#32: fixed-sequence decode dispatch](https://github.com/NyxFoundation/nyx-ssz/issues/32):
-  the provided `decode_fixed_sequence` method, integer overrides and parent dispatch
-  are unproved. All added trait members are explicitly inventoried as unproved; the
+  the provided `decode_fixed_sequence` method, generated fixed-container overrides, parent
+  dispatch and audited native integer copy are unproved. All added trait members are explicitly
+  inventoried as unproved; the
   historical `CodecLaw` is not treated as coverage of the new behavior.
 - [#25: remaining equivalence laws](https://github.com/NyxFoundation/nyx-ssz/issues/25):
   the remaining skips include Cargo/MIR host-tool integration, metadata/codec laws,
   fail-fast decode/drop behavior, generated conversions, typed paths, node access and proof construction.
   They are outstanding obligations, not claims that every operation is individually impossible.
-  The stack-range container decoder, table-free fixed decoder and bulk-copy optimizations are
-  native-tested changes within that backlog, not newly proved codec equivalence laws. The
-  `fixed_sequence_bytes` hook additionally requires exact canonical-byte, width, fallback,
-  encode and Merkle-packing agreement; it is inventoried as an unproved trait member.
+  The stack-range container decoder, table-free fixed decoder, generated sequence codecs,
+  iterative Merkle frontier and bulk-copy optimizations are native-tested changes within that
+  backlog, not newly proved codec equivalence laws. The sequence hooks additionally require
+  exact canonical-byte, width, fallback, encode and Merkle-packing agreement; they are
+  inventoried as unproved trait members.
 
 Historical broader generated artifacts and registrations are not current-source certification.
 `HistoricalMerkle.lean` and `HistoricalMultiproof.lean` preserve omitted Aeneas declaration

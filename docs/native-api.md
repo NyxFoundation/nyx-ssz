@@ -1,6 +1,6 @@
 ---
 title: Native SSZ API
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 tags:
   - ssz
   - rust
@@ -58,8 +58,9 @@ Renaming affects schema/path lookup, not bytes or roots.
 and returns the exact encoded length without building encoded bytes.
 `Ssz::encode_into(&mut [u8]) -> Result<(), CodecError>` writes into an exactly sized slice.
 The library implementations need no encoded-child scratch buffers.
-The existing `encode()` is now a default method: calculate length, allocate one
-zero-initialized output Vec, then write directly into it.
+The default `encode()` calculates length, allocates one zero-initialized output Vec,
+then writes directly into it. Generated containers and owned sequence types override
+that bridge so their validated sizes are reused instead of scanning the same value twice.
 
 ```rust
 use nyx_ssz::codec::Ssz;
@@ -147,10 +148,22 @@ safe `bytemuck::cast_slice`; boolean, U256 and big-endian targets keep the scala
 
 Parents verify that a returned view matches the declared fixed width and element count.
 Encoding copies the complete view once, while basic collection roots split it directly into
-32-byte Merkle chunks. No borrowed bytes escape the source slice and no crate-local unsafe
-code is used. The hook contract and optimized parent equivalence are unproved under
+32-byte Merkle chunks. No borrowed bytes escape the source slice, and this borrowed-view
+hook itself uses safe Rust. The hook contract and optimized parent equivalence are unproved under
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25). See
 [native integer sequence output](native-sequence-output.md).
+
+## Fixed-sequence encode hook
+
+`Ssz::encode_fixed_sequence(values, output)` is a provided specialization hook invoked only
+after the parent has validated every element and the total output length. The default returns
+`None`, retaining the generic element writer. Derived all-fixed containers override it with a
+generated field loop that reuses compile-time widths and avoids repeating container-level
+classification for every element. External fixed codecs keep the generic path, including its
+support for codecs whose runtime length disagrees with their declaration.
+
+The new hook and generated transformation remain unproved under
+[#29](https://github.com/NyxFoundation/nyx-ssz/issues/29).
 
 ## Fixed-sequence decode hook
 
@@ -161,10 +174,11 @@ implementations and derive users need no override. Its generic default keeps ind
 decode callbacks. Variable-width declarations return `BadDeclaration`.
 
 Unsigned integer implementations override it with exact-size collection. On little-endian
-targets, aligned u8 through u128 input uses `bytemuck::try_cast_slice` followed by a safe
-slice clone; unaligned input, big-endian targets and U256 retain fixed-byte conversion.
-There is no crate-local unsafe code, and alignment is checked rather than assumed. Boolean
-values keep per-element validity checking.
+targets, u8 through u128 use one audited byte copy into a correctly aligned `Vec<T>`, including
+unaligned input. The private unsafe boundary is limited to unsigned primitives, checks byte
+width before dispatch, allocates the exact element capacity, copies every byte before `set_len`,
+and is exercised under Miri. Big-endian targets and U256 retain fixed-byte conversion;
+Boolean values keep per-element validity checking.
 
 Typed parents validate declaration, exact count/alignment, capacity and their
 four-byte envelope before dispatch. Returned success counts are checked; a custom

@@ -194,7 +194,8 @@ pub(crate) fn validate_fixed_vector(
     Ok(())
 }
 
-pub(crate) fn fixed_list_count(
+#[doc(hidden)]
+pub fn fixed_list_count(
     length: usize,
     width: usize,
     limit: Option<usize>,

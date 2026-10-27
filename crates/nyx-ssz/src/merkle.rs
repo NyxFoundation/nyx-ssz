@@ -6,6 +6,8 @@ use crate::sha256::hash_pair;
 /// One complete SSZ Merkle node.
 pub type Node = [u8; 32];
 
+include!(concat!(env!("OUT_DIR"), "/zero_hashes.rs"));
+
 mod error;
 pub use error::ProofError;
 
@@ -19,15 +21,11 @@ fn depth_for(count: usize) -> usize {
     if count <= 1 {
         return 0;
     }
-    1 + depth_for(count / 2 + count % 2)
+    usize::BITS as usize - (count - 1).leading_zeros() as usize
 }
 
 fn zero_root(depth: usize) -> Node {
-    if depth == 0 {
-        return [0; 32];
-    }
-    let below = zero_root(depth - 1);
-    hash_pair(&below, &below)
+    ZERO_HASHES[depth]
 }
 
 fn subtree_root(chunks: &[Node], depth: usize) -> Node {
@@ -39,15 +37,46 @@ fn subtree_root(chunks: &[Node], depth: usize) -> Node {
     }
     let below = depth - 1;
     let half = 1usize << below;
-    let (left, right) = if chunks.len() <= half {
-        (subtree_root(chunks, below), zero_root(below))
+    let left = subtree_root(&chunks[..chunks.len().min(half)], below);
+    let right = if chunks.len() <= half {
+        zero_root(below)
     } else {
-        (
-            subtree_root(&chunks[..half], below),
-            subtree_root(&chunks[half..], below),
-        )
+        subtree_root(&chunks[half..], below)
     };
     hash_pair(&left, &right)
+}
+
+fn frontier(chunks: &[Node]) -> [Node; 65] {
+    let mut branches = [[0; 32]; 65];
+    for (index, chunk) in chunks.iter().enumerate() {
+        let mut node = *chunk;
+        let mut occupied = index;
+        let mut level = 0;
+        while occupied & 1 == 1 {
+            node = hash_pair(&branches[level], &node);
+            occupied >>= 1;
+            level += 1;
+        }
+        branches[level] = node;
+    }
+    branches
+}
+
+fn finish_frontier(branches: &[Node; 65], count: usize, depth: usize) -> Node {
+    if depth < usize::BITS as usize && count == 1usize << depth {
+        return branches[depth];
+    }
+    let mut root = ZERO_HASHES[0];
+    let mut occupied = count;
+    for level in 0..depth {
+        root = if occupied & 1 == 1 {
+            hash_pair(&branches[level], &root)
+        } else {
+            hash_pair(&root, &ZERO_HASHES[level])
+        };
+        occupied >>= 1;
+    }
+    root
 }
 
 /// Merkleize complete nodes, padding to the next power of two of the capacity.
@@ -57,15 +86,18 @@ fn subtree_root(chunks: &[Node], depth: usize) -> Node {
 /// rounded up, and no padded tree is allocated.
 pub fn merkleize(chunks: &[Node], limit: Option<usize>) -> Result<Node, MerkleizeError> {
     let capacity = match limit {
-        Some(capacity) => {
-            if chunks.len() > capacity {
-                return Err(MerkleizeError::LimitTooSmall);
-            }
-            capacity
-        }
+        Some(capacity) if chunks.len() > capacity => return Err(MerkleizeError::LimitTooSmall),
+        Some(capacity) => capacity,
         None => chunks.len(),
     };
-    Ok(subtree_root(chunks, depth_for(capacity)))
+    let depth = depth_for(capacity);
+    if chunks.is_empty() {
+        return Ok(ZERO_HASHES[depth]);
+    }
+    if chunks.len() <= 16 {
+        return Ok(subtree_root(chunks, depth));
+    }
+    Ok(finish_frontier(&frontier(chunks), chunks.len(), depth))
 }
 
 fn progressive_subtree_root(chunks: &[Node], depth: usize, width: u128) -> Node {

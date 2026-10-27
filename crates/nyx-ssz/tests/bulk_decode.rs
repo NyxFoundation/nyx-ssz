@@ -6,6 +6,12 @@ use nyx_ssz::{
     U256,
 };
 
+#[derive(Debug, PartialEq, nyx_ssz::Ssz)]
+struct FixedRecord {
+    first: u16,
+    second: u32,
+}
+
 fn check<T: Ssz + PartialEq + std::fmt::Debug>(input: &[u8], expected: Vec<T>, width: usize) {
     assert_eq!(T::decode_fixed_sequence(input).unwrap(), expected);
     assert!(T::decode_fixed_sequence(&[]).unwrap().is_empty());
@@ -15,6 +21,33 @@ fn check<T: Ssz + PartialEq + std::fmt::Debug>(input: &[u8], expected: Vec<T>, w
             Err(CodecError::ScopeUndivided)
         );
     }
+}
+
+#[test]
+fn should_bulk_decode_derived_fixed_containers() {
+    let bytes = [1, 0, 2, 0, 0, 0, 3, 0, 4, 0, 0, 0];
+    let expected = vec![
+        FixedRecord {
+            first: 1,
+            second: 2,
+        },
+        FixedRecord {
+            first: 3,
+            second: 4,
+        },
+    ];
+    assert_eq!(
+        FixedRecord::decode_fixed_sequence(&bytes).unwrap(),
+        expected
+    );
+    assert_eq!(
+        List::<FixedRecord, 2>::decode(&bytes).unwrap().as_slice(),
+        expected.as_slice()
+    );
+    assert_eq!(
+        FixedRecord::decode_fixed_sequence(&bytes[..11]),
+        Err(CodecError::ScopeUndivided)
+    );
 }
 
 #[cfg(target_endian = "little")]

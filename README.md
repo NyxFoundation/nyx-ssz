@@ -2,8 +2,9 @@
 
 Fast, security-focused SSZ codecs, Merkle trees, typed paths, and proofs for Rust.
 
-nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, no crate-local
-`unsafe`, pinned RustCrypto SHA-256, immutable metadata, and complete coverage of all **4,601**
+nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, one audited
+native integer copy module as its only crate-local `unsafe`, pinned RustCrypto SHA-256,
+immutable metadata, and complete coverage of all **4,601**
 official corpus cases, with native tests across x86_64, ARM64, and 32-bit CI. It is not yet published to crates.io,
 formally verified in full, or presented as a security audit.
 
@@ -18,7 +19,7 @@ formally verified in full, or presented as a security audit.
 - 92%+ workspace line coverage, reproducible benchmarks, pinned dependencies, and explicit
   proof-status tracking for every public operation.
 
-**Optimization method:** nyx-ssz combines compile-time layouts, direct destination writes, stack-based offset validation, safe native integer byte views, and direct 32-byte Merkle packing to remove redundant scans, temporary buffers, and allocator traffic.
+**Optimization method:** nyx-ssz combines compile-time layouts, single-pass destination writes, generated fixed-container bulk codecs, audited native integer copies, precomputed zero hashes, and direct 32-byte Merkle packing to remove redundant scans, temporary buffers, and allocator traffic.
 
 **Aeneas method:** the verification pipeline extracts the actual pinned Rust sources through Charon/Aeneas, kernel-checks the declared refinement slice in Lean, and fails closed unless every remaining API is explicitly linked to an unproved issue.
 

@@ -167,6 +167,7 @@
     "nyx_ssz::codec::Ssz::encoded_len",
     "nyx_ssz::codec::Ssz::encode_into",
     "nyx_ssz::codec::Ssz::fixed_sequence_bytes",
+    "nyx_ssz::codec::Ssz::encode_fixed_sequence",
     "nyx_ssz::codec::Ssz::decode_fixed_sequence"
   ]
 }

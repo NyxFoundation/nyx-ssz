@@ -38,6 +38,12 @@ pub trait Ssz: Sized {
         let _ = values;
         None
     }
+    /// Write a previously validated sequence of fixed-width values through a
+    /// type-specialized bulk path. `None` retains the generic element path.
+    fn encode_fixed_sequence(values: &[Self], output: &mut [u8]) -> Option<Result<(), CodecError>> {
+        let _ = (values, output);
+        None
+    }
     /// Decode fixed-width values under the four-byte sequence envelope, without
     /// an additional element-count bound. Success must return one value per
     /// declared width. Variable declarations are rejected. Integer implementations
@@ -155,7 +161,8 @@ pub(crate) fn decode_fixed<T: Ssz>(
     Ok(values)
 }
 
-fn decode_fixed_sequence_default<T: Ssz>(input: &[u8]) -> Result<Vec<T>, CodecError> {
+#[doc(hidden)]
+pub fn decode_fixed_sequence_default<T: Ssz>(input: &[u8]) -> Result<Vec<T>, CodecError> {
     validate_type::<T>()?;
     match fixed_size::<T>() {
         Ok(Some(width)) => {
@@ -177,16 +184,20 @@ fn decode_fixed_sequence_default<T: Ssz>(input: &[u8]) -> Result<Vec<T>, CodecEr
     }
 }
 
-fn decode_integer_sequence<T: Ssz + bytemuck::Pod, const WIDTH: usize>(
+fn decode_integer_sequence<T: Ssz + crate::bulk::NativeInteger, const WIDTH: usize>(
     input: &[u8],
     convert: impl Fn([u8; WIDTH]) -> T,
 ) -> Result<Vec<T>, CodecError> {
     crate::sequence::fixed_list_count(input.len(), WIDTH, None)?;
     #[cfg(target_endian = "little")]
-    if let Ok(values) = bytemuck::try_cast_slice::<u8, T>(input) {
-        return Ok(values.to_vec());
+    {
+        let _ = convert;
+        Ok(crate::bulk::copy_integer_sequence(input))
     }
-    Ok(collect_integer_sequence(input, convert))
+    #[cfg(not(target_endian = "little"))]
+    {
+        Ok(collect_integer_sequence(input, convert))
+    }
 }
 
 fn decode_integer_sequence_scalar<T, const WIDTH: usize>(

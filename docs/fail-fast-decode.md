@@ -1,6 +1,6 @@
 ---
 title: Fail-fast variable container decoding
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 tags:
   - ssz
   - rust
@@ -58,11 +58,13 @@ layout metadata itself allocates nothing.
 
 ## Safe native integer copy
 
-A second stage accelerates fully materialized primitive integer sequences without adding
-crate-local unsafe code. On little-endian targets, `bytemuck::try_cast_slice` validates
-alignment and layout before cloning the native integer slice into the result `Vec`. Unaligned
-input and big-endian targets keep the scalar little-endian conversion path; U256 also keeps
-its scalar conversion. The decoded representation and public collection API are unchanged.
+A second stage at the recorded revision accelerated fully materialized primitive integer
+sequences without adding crate-local unsafe code. On little-endian targets,
+`bytemuck::try_cast_slice` validated alignment and layout before cloning the native integer
+slice into the result `Vec`; unaligned input used scalar conversion. The current implementation
+supersedes that path with the audited unaligned copy described in
+[Native SSZ API](native-api.md#fixed-sequence-decode-hook). U256 and big-endian targets retain
+scalar conversion, and the decoded representation and public collection API are unchanged.
 
 2026-10-25 on the same machine and CPU, five rounds:
 

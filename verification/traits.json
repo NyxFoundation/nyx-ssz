@@ -17,6 +17,7 @@
       "encoded_len": "function",
       "encode_into": "function",
       "fixed_sequence_bytes": "function",
+      "encode_fixed_sequence": "function",
       "decode_fixed_sequence": "function"
     },
     "instances": [

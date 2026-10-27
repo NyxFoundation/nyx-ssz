@@ -21,11 +21,12 @@ pub fn expand(
     let (descriptor, mask) = metadata(&fields, progressive, krate);
     let encode = encode_method(&fields, krate, progressive);
     let decode = decode_method(&fields, krate, progressive);
+    let bulk = bulk_methods(&fields, krate, progressive);
     let root = root_method(&fields, &mask, krate);
     Ok(quote! {
         impl #params #krate::codec::Ssz for #name #args #bounds {
             const TYPE: &'static #krate::type_info::TypeDescriptor = &#descriptor;
-            #encode #decode #root
+            #encode #decode #bulk #root
         }
     })
 }
@@ -44,7 +45,7 @@ fn encode_method(fields: &[Field], krate: &TokenStream, progressive: bool) -> To
         writes.clone(),
         slow_len_body(fields, krate),
         slow_into_body(fields, krate),
-        allocating_encode(&layout, &classify, &writes, krate),
+        allocating_encode(&layout, &classify, &writes, fields, krate),
         krate,
     )
 }
@@ -53,12 +54,14 @@ fn allocating_encode(
     layout: &TokenStream,
     classify: &TokenStream,
     writes: &TokenStream,
+    fields: &[Field],
     krate: &TokenStream,
 ) -> TokenStream {
+    let slow = slow_allocating_body(fields, krate);
     quote! {
         fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
             if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
-                #krate::codec::validate_type::<Self>()?;
+                const { #krate::codec::validate_type::<Self>() }?;
                 #classify
                 if !__ssz_slow {
                     let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
@@ -73,9 +76,7 @@ fn allocating_encode(
                     return ::core::result::Result::Ok(__ssz_output);
                 }
             }
-            let mut __ssz_output = ::std::vec![0; self.encoded_len()?];
-            self.encode_into(&mut __ssz_output)?;
-            ::core::result::Result::Ok(__ssz_output)
+            #slow
         }
     }
 }
@@ -91,7 +92,7 @@ fn fast_encode_impl(
 ) -> TokenStream {
     quote! {
         fn encoded_len(&self) -> ::core::result::Result<usize, #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
+            const { #krate::codec::validate_type::<Self>() }?;
             if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
                 #classify
                 if !__ssz_slow {
@@ -101,7 +102,7 @@ fn fast_encode_impl(
             #length
         }
         fn encode_into(&self, output: &mut [u8]) -> ::core::result::Result<(), #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
+            const { #krate::codec::validate_type::<Self>() }?;
             if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
                 #classify
                 if !__ssz_slow {
@@ -134,6 +135,30 @@ fn slow_len_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
     }
 }
 
+fn slow_allocating_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
+    let prepare = fields.iter().enumerate().map(|(index, field)| {
+        let name = &field.ident;
+        let local = format_ident!("__ssz_size_{}", index);
+        quote!(let #local = size.push(&self.#name)?;)
+    });
+    let writes = fields.iter().enumerate().map(|(index, field)| {
+        let name = &field.ident;
+        let local = format_ident!("__ssz_size_{}", index);
+        quote!(writer.push(&self.#name, #local.ok_or(#krate::error::CodecError::NativeOutputOverflow)?)?;)
+    });
+    quote! {
+        const { #krate::codec::validate_type::<Self>() }?;
+        let mut size = #krate::encoding::ContainerSize::default();
+        #(#prepare)*
+        let (leading, total) = size.finish()?;
+        let mut output = ::std::vec![0; total];
+        let mut writer = #krate::encoding::ContainerWriter::new(&mut output, leading)?;
+        #(#writes)*
+        writer.finish()?;
+        ::core::result::Result::Ok(output)
+    }
+}
+
 fn slow_into_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
     let prepare = fields.iter().enumerate().map(|(index, field)| {
         let name = &field.ident;
@@ -157,15 +182,19 @@ fn slow_into_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
 }
 
 fn slow_encode(fields: &[Field], krate: &TokenStream) -> TokenStream {
+    let allocating = slow_allocating_body(fields, krate);
     let length = slow_len_body(fields, krate);
     let write = slow_into_body(fields, krate);
     quote! {
+        fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
+            #allocating
+        }
         fn encoded_len(&self) -> ::core::result::Result<usize, #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
+            const { #krate::codec::validate_type::<Self>() }?;
             #length
         }
         fn encode_into(&self, output: &mut [u8]) -> ::core::result::Result<(), #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
+            const { #krate::codec::validate_type::<Self>() }?;
             #write
         }
     }
@@ -222,6 +251,111 @@ fn write_fixed(fields: &[Field], krate: &TokenStream) -> TokenStream {
     quote!(#(#writes)*)
 }
 
+fn bulk_methods(fields: &[Field], krate: &TokenStream, progressive: bool) -> TokenStream {
+    if progressive {
+        return quote!();
+    }
+    let types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+    let layout = const_fixed_layout(&types, krate);
+    let encode = bulk_encode_method(fields, &layout, krate);
+    let decode = bulk_decode_method(fields, &layout, krate);
+    quote!(#encode #decode)
+}
+
+fn bulk_encode_method(fields: &[Field], layout: &TokenStream, krate: &TokenStream) -> TokenStream {
+    let writes = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| bulk_encode_field(index, field, krate));
+    quote! {
+        fn encode_fixed_sequence(
+            values: &[Self],
+            output: &mut [u8],
+        ) -> ::core::option::Option<::core::result::Result<(), #krate::error::CodecError>> {
+            let ::core::result::Result::Ok(::core::option::Option::Some((width, __ssz_widths))) = (#layout) else {
+                return ::core::option::Option::None;
+            };
+            ::core::option::Option::Some((|| {
+                let expected = width.checked_mul(values.len())
+                    .ok_or(#krate::error::CodecError::SizeOverflow)?;
+                #krate::encoding::check_length(output, expected)?;
+                let mut __ssz_rest = output;
+                for __ssz_value in values {
+                    let ::core::option::Option::Some((__ssz_item, __ssz_next)) =
+                        __ssz_rest.split_at_mut_checked(width) else {
+                            return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                        };
+                    __ssz_rest = __ssz_next;
+                    let mut __ssz_item_rest = __ssz_item;
+                    #(#writes)*
+                    if !__ssz_item_rest.is_empty() {
+                        return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                    }
+                }
+                #krate::encoding::check_length(__ssz_rest, 0)
+            })())
+        }
+    }
+}
+
+fn bulk_encode_field(index: usize, field: &Field, krate: &TokenStream) -> TokenStream {
+    let name = &field.ident;
+    quote! {
+        let ::core::option::Option::Some((__ssz_slot, __ssz_field_next)) =
+            __ssz_item_rest.split_at_mut_checked(__ssz_widths[#index]) else {
+                return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+            };
+        __ssz_item_rest = __ssz_field_next;
+        #krate::codec::Ssz::encode_into(&__ssz_value.#name, __ssz_slot)?;
+    }
+}
+
+fn bulk_decode_method(fields: &[Field], layout: &TokenStream, krate: &TokenStream) -> TokenStream {
+    let names: Vec<_> = fields.iter().map(|field| &field.ident).collect();
+    let reads = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| bulk_decode_field(index, field, krate));
+    let locals: Vec<_> = (0..fields.len())
+        .map(|index| format_ident!("__ssz_bulk_field_{}", index))
+        .collect();
+    quote! {
+        fn decode_fixed_sequence(bytes: &[u8]) -> ::core::result::Result<::std::vec::Vec<Self>, #krate::error::CodecError> {
+            const { #krate::codec::validate_type::<Self>() }?;
+            let ::core::result::Result::Ok(::core::option::Option::Some((width, __ssz_widths))) = (#layout) else {
+                return #krate::codec::decode_fixed_sequence_default::<Self>(bytes);
+            };
+            let count = #krate::sequence::fixed_list_count(bytes.len(), width, ::core::option::Option::None)?;
+            let mut values = ::std::vec::Vec::with_capacity(count);
+            let mut __ssz_sequence_rest = bytes;
+            while !__ssz_sequence_rest.is_empty() {
+                let ::core::option::Option::Some((__ssz_item, __ssz_next)) =
+                    __ssz_sequence_rest.split_at_checked(width) else {
+                        return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                    };
+                __ssz_sequence_rest = __ssz_next;
+                let mut __ssz_item_rest = __ssz_item;
+                #(#reads)*
+                values.push(Self { #(#names: #locals,)* });
+            }
+            ::core::result::Result::Ok(values)
+        }
+    }
+}
+
+fn bulk_decode_field(index: usize, field: &Field, krate: &TokenStream) -> TokenStream {
+    let local = format_ident!("__ssz_bulk_field_{}", index);
+    let ty = &field.ty;
+    quote! {
+        let ::core::option::Option::Some((__ssz_slice, __ssz_field_next)) =
+            __ssz_item_rest.split_at_checked(__ssz_widths[#index]) else {
+                return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+            };
+        __ssz_item_rest = __ssz_field_next;
+        let #local = <#ty as #krate::codec::Ssz>::decode(__ssz_slice)?;
+    }
+}
+
 fn root_method(fields: &[Field], mask: &TokenStream, krate: &TokenStream) -> TokenStream {
     let roots = fields.iter().map(|field| {
         let name = &field.ident;
@@ -229,7 +363,7 @@ fn root_method(fields: &[Field], mask: &TokenStream, krate: &TokenStream) -> Tok
     });
     quote! {
         fn hash_tree_root(&self) -> ::core::result::Result<[u8;32], #krate::error::CodecError> {
-            #krate::codec::validate_type::<Self>()?;
+            const { #krate::codec::validate_type::<Self>() }?;
             #krate::composite::root_fields(&[#(#roots,)*], #mask)
         }
     }
