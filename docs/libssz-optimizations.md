@@ -37,22 +37,22 @@ using the generic element loop. Its safety and canonical-byte obligations are do
 ## Same-harness measurements
 
 Before: `ae9d9b4d1dec8fe3e1d50cc54316c4eb5271c253` (`origin/main`).
-After: `aeccaf975985a661457194bdc07a2d79d99ce883` (runtime implementation commit).
+After: `9b04686170280b5814e37da723feccb585748401` (runtime implementation commit).
 Both reports use harness hash
 `148a17a585d1fd89fb8e763a6d3d03cea6adeacef882e6f976921baabc826431`, CPU 0,
 five rounds, and median per-run means. Values are nanoseconds per operation.
 
 | Fixture / operation | Before | After | Before / after | libssz after |
 | --- | ---: | ---: | ---: | ---: |
-| Header encode | 76.162 | 46.454 | **1.64x** | 22.748 |
-| Header decode | 10.743 | 10.968 | 0.98x | 10.143 |
-| Header root | 1,091.197 | 1,035.622 | 1.05x | 760.628 |
-| Mixed encode | 464.661 | 409.144 | **1.14x** | 233.949 |
-| Mixed decode | 241.544 | 252.279 | 0.96x | 319.613 |
-| Mixed root | 55,348.166 | 56,401.386 | 0.98x | 49,994.327 |
+| Header encode | 76.162 | 47.542 | **1.60x** | 24.367 |
+| Header decode | 10.743 | 10.635 | 1.01x | 10.171 |
+| Header root | 1,091.197 | 1,007.660 | 1.08x | 751.328 |
+| Mixed encode | 464.661 | 394.347 | **1.18x** | 224.403 |
+| Mixed decode | 241.544 | 288.852 | 0.84x | 330.456 |
+| Mixed root | 55,348.166 | 56,054.261 | 0.99x | 51,229.901 |
 
-The unchanged controls indicate normal shared-host noise: libssz's six common cases were 1.5%
-slower by geometric mean in the after batch, while fastssz was effectively unchanged. The
+The unchanged controls indicate normal shared-host noise: libssz's six common cases were 2.8%
+slower by geometric mean in the after batch, while fastssz was 1.0% faster. The
 current harness directly demonstrates the derived allocating-encode improvement. It does not
 isolate lists of derived fixed containers, the integer-only copy, or sparse Merkle frontiers;
 those paths are protected by focused behavior, allocation, cross-endian, and recursive-oracle
