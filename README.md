@@ -30,10 +30,10 @@ speedups:
 
 | Operation | nyx-ssz | libssz 0.3.0 | fastssz |
 | --- | ---: | ---: | ---: |
-| Header encode | 47.542 ns | 24.367 ns | 51.660 ns |
-| Mixed encode, 12 KB | 394.347 ns | 224.403 ns | 2,110 ns |
-| Mixed decode, 12 KB | 288.852 ns | 330.456 ns | 9,557 ns |
-| Mixed root | 56.054 µs | 51.230 µs | 64.587 µs |
+| Header encode | 14.332 ns | 21.728 ns | 51.880 ns |
+| Mixed encode, 12 KB | 264.829 ns | 192.718 ns | 2,111 ns |
+| Mixed decode, 12 KB | 226.867 ns | 292.542 ns | 9,644 ns |
+| Mixed root | 49.187 µs | 41.478 µs | 65.522 µs |
 
 Full runs and provenance: [benchmarks](docs/benchmarks.md),
 [libssz-inspired optimizations](docs/libssz-optimizations.md), and
