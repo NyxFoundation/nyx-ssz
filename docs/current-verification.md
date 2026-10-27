@@ -57,8 +57,9 @@ unproved derive obligations.
   See `verification/rustcrypto-probe/README.md` for reproduction. No opaque-hash axiom,
   forced portable backend or local runtime fallback is introduced.
 - [#29: direct encoding laws](https://github.com/NyxFoundation/nyx-ssz/issues/29):
-  required `encoded_len`, `encode_into` and `encode_fixed_sequence` methods, the default
-  allocating bridge, fused sequence writes and generated bulk writes are unproved. The member
+  required `TRUSTED_FIXED_LAYOUT`, `encoded_len`, `encode_into`, `encode_append`,
+  `encode_append_prevalidated` and `encode_fixed_sequence` members, the default allocating
+  bridge, fused sequence writes and generated bulk/append writes are unproved. The member
   inventory checks real inherited default bodies.
   The full gate rejects the historical `CodecLaw` for extended traits rather than treating
   coverage of encode/decode/root as proof of length or destination behavior.

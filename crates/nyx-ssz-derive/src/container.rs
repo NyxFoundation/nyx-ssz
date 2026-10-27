@@ -19,6 +19,7 @@ pub fn expand(
     let (params, args, bounds) = generics.split_for_impl();
     let name = &input.ident;
     let (descriptor, mask) = metadata(&fields, progressive, krate);
+    let trusted = trusted_fixed_layout(&fields, progressive, krate);
     let encode = encode_method(&fields, krate, progressive);
     let decode = decode_method(&fields, krate, progressive);
     let bulk = bulk_methods(&fields, krate, progressive);
@@ -26,28 +27,33 @@ pub fn expand(
     Ok(quote! {
         impl #params #krate::codec::Ssz for #name #args #bounds {
             const TYPE: &'static #krate::type_info::TypeDescriptor = &#descriptor;
+            const TRUSTED_FIXED_LAYOUT: bool = #trusted;
             #encode #decode #bulk #root
         }
     })
 }
 
 fn encode_method(fields: &[Field], krate: &TokenStream, progressive: bool) -> TokenStream {
+    let append = append_method(fields, krate);
     if progressive {
-        return slow_encode(fields, krate);
+        let encode = slow_encode(fields, krate);
+        return quote!(#encode #append);
     }
     let types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
     let layout = const_fixed_layout(&types, krate);
     let classify = classify_fixed(fields, krate);
     let writes = write_fixed(fields, krate);
-    fast_encode_impl(
-        layout.clone(),
-        classify.clone(),
-        writes.clone(),
+    let allocating = allocating_encode(&layout, &classify, &writes, fields, krate);
+    let encode = fast_encode_impl(
+        layout,
+        classify,
+        writes,
         slow_len_body(fields, krate),
         slow_into_body(fields, krate),
-        allocating_encode(&layout, &classify, &writes, fields, krate),
+        allocating,
         krate,
-    )
+    );
+    quote!(#encode #append)
 }
 
 fn allocating_encode(
@@ -57,26 +63,32 @@ fn allocating_encode(
     fields: &[Field],
     krate: &TokenStream,
 ) -> TokenStream {
-    let slow = slow_allocating_body(fields, krate);
+    let direct = write_declared_fixed(fields, krate);
     quote! {
         fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
-            if ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_))) {
+            if let ::core::result::Result::Ok(::core::option::Option::Some((__ssz_total, __ssz_widths))) = #layout {
                 const { #krate::codec::validate_type::<Self>() }?;
+                if const { Self::TRUSTED_FIXED_LAYOUT } {
+                    let mut __ssz_output = ::std::vec![0; __ssz_total];
+                    let mut __ssz_rest = __ssz_output.as_mut_slice();
+                    #direct
+                    return ::core::result::Result::Ok(__ssz_output);
+                }
                 #classify
                 if !__ssz_slow {
                     let __ssz_total = #krate::encoding::finish_fixed_total(__ssz_total, __ssz_oversize)?;
                     let mut __ssz_output = ::std::vec![0; __ssz_total];
-                    {
-                        let mut __ssz_rest = __ssz_output.as_mut_slice();
-                        #writes
-                        if !__ssz_rest.is_empty() {
-                            return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
-                        }
+                    let mut __ssz_rest = __ssz_output.as_mut_slice();
+                    #writes
+                    if !__ssz_rest.is_empty() {
+                        return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
                     }
                     return ::core::result::Result::Ok(__ssz_output);
                 }
             }
-            #slow
+            let mut output = ::std::vec::Vec::new();
+            self.encode_append(&mut output)?;
+            ::core::result::Result::Ok(output)
         }
     }
 }
@@ -135,30 +147,6 @@ fn slow_len_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
     }
 }
 
-fn slow_allocating_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
-    let prepare = fields.iter().enumerate().map(|(index, field)| {
-        let name = &field.ident;
-        let local = format_ident!("__ssz_size_{}", index);
-        quote!(let #local = size.push(&self.#name)?;)
-    });
-    let writes = fields.iter().enumerate().map(|(index, field)| {
-        let name = &field.ident;
-        let local = format_ident!("__ssz_size_{}", index);
-        quote!(writer.push(&self.#name, #local.ok_or(#krate::error::CodecError::NativeOutputOverflow)?)?;)
-    });
-    quote! {
-        const { #krate::codec::validate_type::<Self>() }?;
-        let mut size = #krate::encoding::ContainerSize::default();
-        #(#prepare)*
-        let (leading, total) = size.finish()?;
-        let mut output = ::std::vec![0; total];
-        let mut writer = #krate::encoding::ContainerWriter::new(&mut output, leading)?;
-        #(#writes)*
-        writer.finish()?;
-        ::core::result::Result::Ok(output)
-    }
-}
-
 fn slow_into_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
     let prepare = fields.iter().enumerate().map(|(index, field)| {
         let name = &field.ident;
@@ -182,13 +170,17 @@ fn slow_into_body(fields: &[Field], krate: &TokenStream) -> TokenStream {
 }
 
 fn slow_encode(fields: &[Field], krate: &TokenStream) -> TokenStream {
-    let allocating = slow_allocating_body(fields, krate);
+    let allocating = quote! {
+        fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
+            let mut output = ::std::vec::Vec::new();
+            self.encode_append(&mut output)?;
+            ::core::result::Result::Ok(output)
+        }
+    };
     let length = slow_len_body(fields, krate);
     let write = slow_into_body(fields, krate);
     quote! {
-        fn encode(&self) -> ::core::result::Result<::std::vec::Vec<u8>, #krate::error::CodecError> {
-            #allocating
-        }
+        #allocating
         fn encoded_len(&self) -> ::core::result::Result<usize, #krate::error::CodecError> {
             const { #krate::codec::validate_type::<Self>() }?;
             #length
@@ -196,6 +188,126 @@ fn slow_encode(fields: &[Field], krate: &TokenStream) -> TokenStream {
         fn encode_into(&self, output: &mut [u8]) -> ::core::result::Result<(), #krate::error::CodecError> {
             const { #krate::codec::validate_type::<Self>() }?;
             #write
+        }
+    }
+}
+
+fn trusted_fixed_layout(fields: &[Field], progressive: bool, krate: &TokenStream) -> TokenStream {
+    if progressive {
+        return quote!(false);
+    }
+    let types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+    let layout = const_fixed_layout(&types, krate);
+    let trusted = types
+        .iter()
+        .map(|ty| quote!(<#ty as #krate::codec::Ssz>::TRUSTED_FIXED_LAYOUT));
+    quote!(
+        ::core::matches!(#layout, ::core::result::Result::Ok(::core::option::Option::Some(_)))
+            #(&& #trusted)*
+    )
+}
+
+fn write_declared_fixed(fields: &[Field], krate: &TokenStream) -> TokenStream {
+    let writes = fields.iter().enumerate().map(|(index, field)| {
+        let name = &field.ident;
+        quote! {
+            let ::core::option::Option::Some((__ssz_slot, __ssz_next)) =
+                __ssz_rest.split_at_mut_checked(__ssz_widths[#index]) else {
+                    return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                };
+            __ssz_rest = __ssz_next;
+            #krate::codec::Ssz::encode_into(&self.#name, __ssz_slot)?;
+        }
+    });
+    quote! {
+        #(#writes)*
+        if !__ssz_rest.is_empty() {
+            return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+        }
+    }
+}
+
+fn append_header_field(index: usize, field: &Field, krate: &TokenStream) -> TokenStream {
+    let name = &field.ident;
+    let ty = &field.ty;
+    let local = format_ident!("__ssz_append_size_{}", index);
+    quote! {
+        match const { #krate::codec::fixed_size::<#ty>() } {
+            ::core::result::Result::Ok(::core::option::Option::None) => {
+                let offset = u32::try_from(__ssz_body)
+                    .map_err(|_| #krate::error::CodecError::SizeOverflow)?;
+                output.extend_from_slice(&offset.to_le_bytes());
+                __ssz_body += #local.ok_or(#krate::error::CodecError::NativeOutputOverflow)?;
+            }
+            ::core::result::Result::Ok(::core::option::Option::Some(_))
+            | ::core::result::Result::Err(#krate::error::CodecError::SizeOverflow) => {
+                #krate::encoding::append_value(
+                    output,
+                    &self.#name,
+                    #local.ok_or(#krate::error::CodecError::NativeOutputOverflow)?,
+                )?;
+            }
+            ::core::result::Result::Err(error) => return ::core::result::Result::Err(error),
+        }
+    }
+}
+
+fn append_body_field(index: usize, field: &Field, krate: &TokenStream) -> TokenStream {
+    let name = &field.ident;
+    let ty = &field.ty;
+    let local = format_ident!("__ssz_append_size_{}", index);
+    quote! {
+        if ::core::matches!(
+            const { #krate::codec::fixed_size::<#ty>() },
+            ::core::result::Result::Ok(::core::option::Option::None)
+        ) {
+            #krate::encoding::append_value(
+                output,
+                &self.#name,
+                #local.ok_or(#krate::error::CodecError::NativeOutputOverflow)?,
+            )?;
+        }
+    }
+}
+
+fn append_method(fields: &[Field], krate: &TokenStream) -> TokenStream {
+    let prepare = fields.iter().enumerate().map(|(index, field)| {
+        let name = &field.ident;
+        let local = format_ident!("__ssz_append_size_{}", index);
+        quote!(let #local = size.push(&self.#name)?;)
+    });
+    let headers = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| append_header_field(index, field, krate));
+    let bodies = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| append_body_field(index, field, krate));
+    quote! {
+        fn encode_append(&self, output: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), #krate::error::CodecError> {
+            const { #krate::codec::validate_type::<Self>() }?;
+            let mut size = #krate::encoding::ContainerSize::default();
+            #(#prepare)*
+            let (leading, total) = size.finish()?;
+            let start = output.len();
+            output.reserve_exact(total);
+            let result = (|| {
+                let mut __ssz_body = leading;
+                #(#headers)*
+                #(#bodies)*
+                let expected = start.checked_add(total)
+                    .ok_or(#krate::error::CodecError::NativeOutputOverflow)?;
+                if output.len() != expected {
+                    return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
+                }
+                ::core::result::Result::Ok(())
+            })();
+            if let ::core::result::Result::Err(error) = result {
+                output.truncate(start);
+                return ::core::result::Result::Err(error);
+            }
+            ::core::result::Result::Ok(())
         }
     }
 }

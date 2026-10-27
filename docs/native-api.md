@@ -126,8 +126,10 @@ These changed codec laws remain unproved under the existing equivalence backlog.
 
 All-fixed, non-progressive containers validate the declaration and exact body length, then
 split field slices directly. They do not build a range table. Encoding of the same containers
-validates every child in order, applies the four-byte envelope, and writes field bytes directly.
-A deferred native overflow still becomes `SizeOverflow` only after later protocol errors.
+writes field bytes directly. When every field opts into `TRUSTED_FIXED_LAYOUT`, generated
+allocating encode uses compile-time widths without querying each value length; otherwise it
+retains full child classification and error precedence. A deferred native overflow still becomes
+`SizeOverflow` only after later protocol errors.
 Variable and progressive encoding retains `ContainerWriter`; variable decoding uses validated
 stack ranges. A width sum that overflows `usize` is `InvalidLength`, and inputs of at least four
 gigabytes remain `SizeOverflow`, both before any field decoder. Completed fields are dropped
@@ -138,6 +140,28 @@ preserve the input allocation at those sizes. `N > 32` and every `ByteList` stil
 accepted `Vec`. Decode of an inline vector performs no allocation. These layout changes are
 native-tested and remain under the unproved codec backlog in
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25).
+
+## Append encode hooks
+
+`Ssz::encode_append` appends canonical bytes to an existing `Vec<u8>` while preserving its
+prefix. The default validates `encoded_len`, then uses an initialized destination slice and
+restores the original length on error. `encode_append_prevalidated` is an optional specialization
+for codecs whose caller has already retained the exact length. Parents reject hooks that append
+a different number of bytes and truncate the failed append.
+
+Scalars, owned byte collections and integer sequences append directly with safe
+`extend_from_slice`. Generated variable containers reserve the exact total, append fixed fields
+and four-byte offsets in header order, then append variable bodies. This follows libssz's
+capacity-plus-append technique without introducing another unsafe region or zero-initializing
+the complete output allocation.
+
+`TRUSTED_FIXED_LAYOUT` defaults to false. It may be true only when the declared fixed width and
+`encode_into` validation agree without a separate value-length query. Primitive integers,
+booleans, byte vectors and recursively trusted derived containers opt in. External codecs retain
+the defensive path unless they explicitly accept this contract.
+
+All three members and the generated append transformation remain unproved under
+[#29](https://github.com/NyxFoundation/nyx-ssz/issues/29).
 
 ## Fixed-sequence byte hook
 

@@ -97,6 +97,19 @@ impl<T: Ssz, const N: usize> Ssz for Vector<T, N> {
         crate::encoding::encode_sequence(values)
     }
 
+    fn encode_append(&self, output: &mut Vec<u8>) -> Result<(), CodecError> {
+        vector_type::<T, N>()?;
+        let values = self.as_slice();
+        if values.len() != N {
+            return Err(CodecError::InvalidLength);
+        }
+        crate::encoding::append_sequence(values, output)
+    }
+
+    fn encode_append_prevalidated(&self, output: &mut Vec<u8>) -> Option<Result<(), CodecError>> {
+        Some(crate::encoding::append_sequence(self.as_slice(), output))
+    }
+
     fn encoded_len(&self) -> Result<usize, CodecError> {
         vector_type::<T, N>()?;
         let values = self.as_slice();
@@ -139,6 +152,19 @@ impl<T: Ssz, const MAX: usize> Ssz for List<T, MAX> {
             return Err(CodecError::OverLimit);
         }
         crate::encoding::encode_sequence(values)
+    }
+
+    fn encode_append(&self, output: &mut Vec<u8>) -> Result<(), CodecError> {
+        validate_type::<T>()?;
+        let values = self.as_slice();
+        if values.len() > MAX {
+            return Err(CodecError::OverLimit);
+        }
+        crate::encoding::append_sequence(values, output)
+    }
+
+    fn encode_append_prevalidated(&self, output: &mut Vec<u8>) -> Option<Result<(), CodecError>> {
+        Some(crate::encoding::append_sequence(self.as_slice(), output))
     }
 
     fn encoded_len(&self) -> Result<usize, CodecError> {

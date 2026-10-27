@@ -14,10 +14,11 @@ preserving nyx-ssz's checked public contracts and fail-fast error precedence.
 
 ## Implemented stages
 
-1. **Compile-time generated validation and one-allocation encode.** Derived containers move
-   static type validation into const evaluation. Their allocating fallback now computes field
-   sizes once, allocates the exact destination, and writes directly instead of calling
-   `encoded_len` and then repeating the same traversal through `encode_into`.
+1. **Compile-time validation and capacity-based append encode.** Derived containers move
+   static type validation into const evaluation. Variable containers compute field sizes once,
+   reserve the exact capacity, append their header and bodies directly, and avoid zero-filling
+   the complete allocation. Recursively trusted fixed containers use compile-time widths and
+   skip per-value length classification. External codecs keep the defensive fallback.
 2. **Generated fixed-container sequence codecs.** The derive macro emits bulk encode/decode
    hooks for ordinary fixed-width containers. A parent sequence validates its declaration and
    destination once, then slices each field directly without rediscovering the container layout

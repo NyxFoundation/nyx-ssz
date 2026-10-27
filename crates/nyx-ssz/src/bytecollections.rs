@@ -142,6 +142,15 @@ mod ssz {
 
     impl<const N: usize> Ssz for ByteVector<N> {
         const TYPE: &'static TypeDescriptor = &TypeDescriptor::ByteVector(N);
+        const TRUSTED_FIXED_LAYOUT: bool = true;
+
+        fn encode_append_prevalidated(
+            &self,
+            output: &mut Vec<u8>,
+        ) -> Option<Result<(), CodecError>> {
+            output.extend_from_slice(self.as_bytes());
+            Some(Ok(()))
+        }
 
         fn encoded_len(&self) -> Result<usize, CodecError> {
             if N == 0 {
@@ -178,6 +187,14 @@ mod ssz {
 
     impl<const MAX: usize> Ssz for ByteList<MAX> {
         const TYPE: &'static TypeDescriptor = &TypeDescriptor::ByteList(MAX);
+
+        fn encode_append_prevalidated(
+            &self,
+            output: &mut Vec<u8>,
+        ) -> Option<Result<(), CodecError>> {
+            output.extend_from_slice(self.as_bytes());
+            Some(Ok(()))
+        }
 
         fn encoded_len(&self) -> Result<usize, CodecError> {
             bytes::encode_byte_list(self.as_bytes(), MAX)

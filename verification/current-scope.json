@@ -164,6 +164,9 @@
   "rustcrypto_source_sha256": "68d2ea118e37b5f5c36b9b220027dc24e200d8a9e2caba825a75a3b71613ec2d",
   "rustcrypto_probe_lock_sha256": "1040ff0ec25279a91980c3df9de7991b2c35a4432473c9b2e7890b7e281b5b70",
   "unproved_trait_members": [
+    "nyx_ssz::codec::Ssz::TRUSTED_FIXED_LAYOUT",
+    "nyx_ssz::codec::Ssz::encode_append",
+    "nyx_ssz::codec::Ssz::encode_append_prevalidated",
     "nyx_ssz::codec::Ssz::encoded_len",
     "nyx_ssz::codec::Ssz::encode_into",
     "nyx_ssz::codec::Ssz::fixed_sequence_bytes",

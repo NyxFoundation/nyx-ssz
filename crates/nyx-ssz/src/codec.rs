@@ -14,14 +14,30 @@ use crate::{
 pub trait Ssz: Sized {
     /// Immutable declaration used for type validation and layout metadata.
     const TYPE: &'static TypeDescriptor;
+    /// Whether the declared fixed width and `encode_into` validation are trusted
+    /// to agree without a separate per-value length query.
+    const TRUSTED_FIXED_LAYOUT: bool = false;
     /// Exact reference bytes, its protocol error, or `NativeOutputOverflow` iff
     /// successful natural reference bytes have length greater than `usize::MAX`.
     /// Representable successes cannot use the native refusal; protocol faults
     /// retain their distinct errors and precedence, including through parents.
     fn encode(&self) -> Result<Vec<u8>, CodecError> {
-        let mut output = vec![0; self.encoded_len()?];
-        self.encode_into(&mut output)?;
+        let mut output = Vec::new();
+        self.encode_append(&mut output)?;
         Ok(output)
+    }
+    /// Append canonical bytes without requiring an initialized destination buffer.
+    /// Implementations must preserve the existing prefix and append exactly
+    /// `encoded_len()` bytes on success. The default restores the prefix on error.
+    fn encode_append(&self, output: &mut Vec<u8>) -> Result<(), CodecError> {
+        let length = self.encoded_len()?;
+        crate::encoding::append_value(output, self, length)
+    }
+    /// Append after the caller has validated and retained the exact encoded length.
+    /// `None` uses the initialized-slice fallback.
+    fn encode_append_prevalidated(&self, output: &mut Vec<u8>) -> Option<Result<(), CodecError>> {
+        let _ = output;
+        None
     }
     /// Exact encoded size, including complete value validation and error precedence.
     /// Must agree with encode_into; native unrepresentability is not a protocol fault.
@@ -254,8 +270,17 @@ macro_rules! basic_codec {
     ($type:ident, $declaration:expr, $encode:ident, $decode:ident, $root:ident) => {
         impl Ssz for $type {
             const TYPE: &'static TypeDescriptor = &$declaration;
+            const TRUSTED_FIXED_LAYOUT: bool = true;
 
             integer_bulk_method!($type);
+
+            fn encode_append_prevalidated(
+                &self,
+                output: &mut Vec<u8>,
+            ) -> Option<Result<(), CodecError>> {
+                output.extend_from_slice(&scalar::$encode(*self));
+                Some(Ok(()))
+            }
 
             fn encoded_len(&self) -> Result<usize, CodecError> {
                 Ok(core::mem::size_of::<$type>())
@@ -321,9 +346,15 @@ basic_codec!(
 
 impl Ssz for U256 {
     const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(32);
+    const TRUSTED_FIXED_LAYOUT: bool = true;
 
     fn decode_fixed_sequence(input: &[u8]) -> Result<Vec<Self>, CodecError> {
         decode_integer_sequence_scalar::<Self, 32>(input, Self::from_le_bytes::<32>)
+    }
+
+    fn encode_append_prevalidated(&self, output: &mut Vec<u8>) -> Option<Result<(), CodecError>> {
+        output.extend_from_slice(&scalar::encode_u256(self));
+        Some(Ok(()))
     }
 
     fn encoded_len(&self) -> Result<usize, CodecError> {

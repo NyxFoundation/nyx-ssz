@@ -140,6 +140,49 @@ struct FixedRecord {
     second: FixedByte,
 }
 
+static TRUSTED_LENGTH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+struct TrustedFixedByte(u8);
+impl Ssz for TrustedFixedByte {
+    const TYPE: &'static nyx_ssz::type_info::TypeDescriptor =
+        &nyx_ssz::type_info::TypeDescriptor::Uint(1);
+    const TRUSTED_FIXED_LAYOUT: bool = true;
+
+    fn encoded_len(&self) -> Result<usize, CodecError> {
+        TRUSTED_LENGTH_CALLS.fetch_add(1, Ordering::SeqCst);
+        Ok(1)
+    }
+
+    fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
+        nyx_ssz::encoding::copy(output, &[self.0])
+    }
+
+    fn decode(input: &[u8]) -> Result<Self, CodecError> {
+        u8::decode(input).map(Self)
+    }
+
+    fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
+        self.0.hash_tree_root()
+    }
+}
+
+#[derive(nyx_ssz::Ssz)]
+struct TrustedFixedRecord {
+    first: TrustedFixedByte,
+    second: TrustedFixedByte,
+}
+
+#[test]
+fn should_skip_value_length_queries_for_trusted_fixed_containers() {
+    TRUSTED_LENGTH_CALLS.store(0, Ordering::SeqCst);
+    let value = TrustedFixedRecord {
+        first: TrustedFixedByte(1),
+        second: TrustedFixedByte(2),
+    };
+    assert_eq!(value.encode().unwrap(), [1, 2]);
+    assert_eq!(TRUSTED_LENGTH_CALLS.load(Ordering::SeqCst), 0);
+}
+
 #[test]
 fn should_validate_fixed_container_sequences_once_before_bulk_encoding() {
     FIXED_LENGTH_CALLS.store(0, Ordering::SeqCst);

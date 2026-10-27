@@ -45,6 +45,15 @@ impl<T: Ssz, const MAX: usize> Ssz for BoundedProgressiveList<T, MAX> {
         crate::encoding::encode_sequence(values)
     }
 
+    fn encode_append(&self, output: &mut Vec<u8>) -> Result<(), CodecError> {
+        validate_type::<T>()?;
+        let values = self.as_slice();
+        if values.len() > MAX {
+            return Err(CodecError::OverLimit);
+        }
+        crate::encoding::append_sequence(values, output)
+    }
+
     fn encoded_len(&self) -> Result<usize, CodecError> {
         validate_type::<T>()?;
         let values = self.as_slice();
@@ -80,6 +89,11 @@ impl<T: Ssz> Ssz for ProgressiveList<T> {
     fn encode(&self) -> Result<Vec<u8>, CodecError> {
         validate_type::<T>()?;
         crate::encoding::encode_sequence(self.as_slice())
+    }
+
+    fn encode_append(&self, output: &mut Vec<u8>) -> Result<(), CodecError> {
+        validate_type::<T>()?;
+        crate::encoding::append_sequence(self.as_slice(), output)
     }
 
     fn encoded_len(&self) -> Result<usize, CodecError> {
