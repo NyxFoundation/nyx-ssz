@@ -65,28 +65,25 @@ tests rather than a claimed microbenchmark speedup.
 ## Capacity-append follow-up
 
 The follow-up compares `aa07c0f214aec1ec1f1ddb1252a0c1e574dda3db` with
-`4238d53ac6709aad11a78bcbe86a40470924a441` by alternating the two Criterion
-executables on CPU 0. Encode uses seven rounds; decode/root use fifteen rounds to expose
-shared-host drift. Control-adjusted speedup divides nyx's candidate/baseline ratio by the
-same libssz ratio; values above one are faster.
+`05c111995b6f89e082079a158e3d420f307a61bd` using seven alternating full Criterion
+runs on CPU 0. Control-adjusted speedup divides nyx's candidate/baseline ratio by the same
+libssz ratio; values above one are faster.
 
 | Fixture / operation | Before | After | Raw speedup | Control-adjusted speedup |
 | --- | ---: | ---: | ---: | ---: |
-| Header encode | 48.584 | 14.653 | **3.32x** | **3.26x** |
-| Header decode | 7.533 | 8.340 | 0.90x | 1.05x |
-| Header root | 767.622 | 768.655 | 1.00x | 0.97x |
-| Mixed encode | 412.723 | 214.940 | **1.92x** | **2.10x** |
-| Mixed decode | 195.670 | 209.916 | 0.93x | 1.15x |
-| Mixed root | 42,114.569 | 41,998.948 | 1.00x | 1.02x |
+| Header encode | 36.567 | 14.621 | **2.50x** | **2.07x** |
+| Header decode | 9.769 | 8.214 | 1.19x | 1.26x |
+| Header root | 716.266 | 711.365 | 1.01x | 0.96x |
+| Mixed encode | 378.923 | 253.883 | **1.49x** | **1.77x** |
+| Mixed decode | 255.802 | 225.025 | 1.14x | 1.49x |
+| Mixed root | 54,223.630 | 45,835.504 | 1.18x | 1.11x |
 
-The non-encode raw medians moved with their unchanged libssz controls: for example, mixed
-decode's control was 23.8% slower in the candidate rounds. After control adjustment, only
-header root regressed, by 2.8%, within the declared 5% guard. Both encode fixtures exceed the
-10% target by a wide margin.
+All raw nyx medians improved. After control adjustment, only Header root regressed, by 4.5%,
+within the declared 5% guard. Both encode fixtures exceed the 10% target by a wide margin.
 
-A separate ordinary five-round full run of the candidate measured Header encode at 14.332 ns
-versus libssz's 21.728 ns, and Mixed encode at 264.829 ns versus 192.718 ns. Mixed decode
-remained faster than libssz (226.867 ns versus 292.542 ns).
+A separate ordinary five-round full run of the candidate measured Header encode at 14.270 ns
+versus libssz's 22.692 ns, and Mixed encode at 263.255 ns versus 194.898 ns. Mixed decode
+remained faster than libssz (217.424 ns versus 273.705 ns).
 
 - [Alternating A/B report](data/libssz-append-ab.json)
 - [Final full candidate report](data/libssz-append-after.json)
