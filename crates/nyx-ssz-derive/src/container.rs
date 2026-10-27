@@ -291,13 +291,13 @@ fn append_method(fields: &[Field], krate: &TokenStream) -> TokenStream {
             #(#prepare)*
             let (leading, total) = size.finish()?;
             let start = output.len();
+            let expected = start.checked_add(total)
+                .ok_or(#krate::error::CodecError::NativeOutputOverflow)?;
             output.reserve_exact(total);
             let result = (|| {
                 let mut __ssz_body = leading;
                 #(#headers)*
                 #(#bodies)*
-                let expected = start.checked_add(total)
-                    .ok_or(#krate::error::CodecError::NativeOutputOverflow)?;
                 if output.len() != expected {
                     return ::core::result::Result::Err(#krate::error::CodecError::InvalidLength);
                 }
