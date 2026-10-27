@@ -30,13 +30,14 @@ speedups:
 
 | Operation | nyx-ssz | libssz 0.3.0 | fastssz |
 | --- | ---: | ---: | ---: |
-| Header encode | 45.854 ns | 15.479 ns | 34.910 ns |
-| Mixed encode, 12 KB | 327.242 ns | 151.958 ns | 1,428 ns |
-| Mixed decode, 12 KB | 221.596 ns | 199.537 ns | 6,366 ns |
-| Mixed root | 36.204 µs | 33.568 µs | 43.393 µs |
+| Header encode | 46.454 ns | 22.748 ns | 53.220 ns |
+| Mixed encode, 12 KB | 409.144 ns | 233.949 ns | 2,167 ns |
+| Mixed decode, 12 KB | 252.279 ns | 319.613 ns | 10,026 ns |
+| Mixed root | 56.401 µs | 49.994 µs | 63.766 µs |
 
 Full runs and provenance: [benchmarks](docs/benchmarks.md),
-[fixed encode](docs/fixed-encode.md), and [native integer output](docs/native-sequence-output.md).
+[libssz-inspired optimizations](docs/libssz-optimizations.md), and
+[native integer output](docs/native-sequence-output.md).
 
 ## Install
 
