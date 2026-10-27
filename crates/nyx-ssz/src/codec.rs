@@ -192,7 +192,7 @@ fn decode_integer_sequence<T: Ssz + crate::bulk::NativeInteger, const WIDTH: usi
     #[cfg(target_endian = "little")]
     {
         let _ = convert;
-        Ok(crate::bulk::copy_integer_sequence(input))
+        crate::bulk::copy_integer_sequence(input)
     }
     #[cfg(not(target_endian = "little"))]
     {

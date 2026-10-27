@@ -1,6 +1,8 @@
 //! Audited native bulk copies for primitive integer sequences.
 #![allow(unsafe_code)]
 
+use crate::error::CodecError;
+
 /// Primitive integers whose every bit pattern is valid and whose byte width is exact.
 ///
 /// # Safety
@@ -18,10 +20,11 @@ unsafe impl NativeInteger for u128 {}
 /// Copy little-endian bytes into a correctly aligned integer allocation.
 ///
 /// The caller validates byte divisibility and invokes this only on little-endian targets.
-pub(crate) fn copy_integer_sequence<T: NativeInteger>(input: &[u8]) -> Vec<T> {
+pub(crate) fn copy_integer_sequence<T: NativeInteger>(input: &[u8]) -> Result<Vec<T>, CodecError> {
     let width = core::mem::size_of::<T>();
-    debug_assert!(width != 0);
-    debug_assert!(input.len().is_multiple_of(width));
+    if width == 0 || !input.len().is_multiple_of(width) {
+        return Err(CodecError::InvalidLength);
+    }
     let count = input.len() / width;
     let mut output = Vec::<T>::with_capacity(count);
     // SAFETY: `output` owns capacity for exactly `input.len()` bytes, the fresh
@@ -35,5 +38,18 @@ pub(crate) fn copy_integer_sequence<T: NativeInteger>(input: &[u8]) -> Vec<T> {
         );
         output.set_len(count);
     }
-    output
+    Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_reject_input_that_cannot_fill_complete_integers() {
+        assert_eq!(
+            copy_integer_sequence::<u16>(&[0]),
+            Err(CodecError::InvalidLength)
+        );
+    }
 }
