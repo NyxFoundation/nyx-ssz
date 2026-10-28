@@ -19,6 +19,36 @@ pub fn copy(output: &mut [u8], bytes: &[u8]) -> Result<(), CodecError> {
     Ok(())
 }
 
+/// Append one value while checking the public append-hook length contract.
+#[doc(hidden)]
+pub fn append_value<T: Ssz>(
+    output: &mut Vec<u8>,
+    value: &T,
+    length: usize,
+) -> Result<(), CodecError> {
+    let start = output.len();
+    let expected = start
+        .checked_add(length)
+        .ok_or(CodecError::NativeOutputOverflow)?;
+    if let Some(result) = value.encode_append_prevalidated(output) {
+        if let Err(error) = result {
+            output.truncate(start);
+            return Err(error);
+        }
+    } else {
+        output.resize(expected, 0);
+        if let Err(error) = value.encode_into(&mut output[start..]) {
+            output.truncate(start);
+            return Err(error);
+        }
+    }
+    if output.len() != expected {
+        output.truncate(start);
+        return Err(CodecError::InvalidLength);
+    }
+    Ok(())
+}
+
 /// Classification of one child for the all-fixed container fast path.
 pub enum FixedChild {
     /// Fixed declaration and a representable encoded length.
@@ -203,22 +233,86 @@ pub(crate) fn sequence_len<T: Ssz>(values: &[T]) -> Result<usize, CodecError> {
     Ok((leading + body) as usize)
 }
 
+pub(crate) fn encode_sequence<T: Ssz>(values: &[T]) -> Result<Vec<u8>, CodecError> {
+    let mut output = Vec::new();
+    append_sequence(values, &mut output)?;
+    Ok(output)
+}
+
+pub(crate) fn append_sequence<T: Ssz>(
+    values: &[T],
+    output: &mut Vec<u8>,
+) -> Result<(), CodecError> {
+    let length = sequence_len(values)?;
+    let start = output.len();
+    let end = start
+        .checked_add(length)
+        .ok_or(CodecError::NativeOutputOverflow)?;
+    if let Some(bytes) = validated_fixed_sequence_bytes(values)? {
+        output.reserve_exact(length);
+        output.extend_from_slice(bytes);
+        return Ok(());
+    }
+    output.resize(end, 0);
+    if let Err(error) = write_sequence_prevalidated(values, &mut output[start..]) {
+        output.truncate(start);
+        return Err(error);
+    }
+    Ok(())
+}
+
 pub(crate) fn write_sequence<T: Ssz>(values: &[T], output: &mut [u8]) -> Result<(), CodecError> {
+    check_length(output, sequence_len(values)?)?;
+    write_sequence_prevalidated(values, output)
+}
+
+fn write_sequence_prevalidated<T: Ssz>(values: &[T], output: &mut [u8]) -> Result<(), CodecError> {
     if let Some(bytes) = validated_fixed_sequence_bytes(values)? {
         return copy(output, bytes);
     }
-    let fixed = fixed::<T>()?;
-    let leading = if fixed {
-        output.len()
-    } else {
-        values
-            .len()
-            .checked_mul(4)
-            .ok_or(CodecError::SizeOverflow)?
-    };
+    match fixed_size::<T>() {
+        Ok(Some(width)) => write_fixed_sequence(values, output, width),
+        Ok(None) => write_variable_sequence(values, output),
+        Err(CodecError::SizeOverflow) => write_unrepresentable_fixed(values, output),
+        Err(error) => Err(error),
+    }
+}
+
+fn write_fixed_sequence<T: Ssz>(
+    values: &[T],
+    output: &mut [u8],
+    width: usize,
+) -> Result<(), CodecError> {
+    if let Some(result) = T::encode_fixed_sequence(values, output) {
+        let expected = width
+            .checked_mul(values.len())
+            .ok_or(CodecError::SizeOverflow)?;
+        check_length(output, expected)?;
+        return result;
+    }
+    let mut writer = ContainerWriter::new(output, output.len())?;
+    for value in values {
+        writer.push_layout(value, value.encoded_len()?, true)?;
+    }
+    writer.finish()
+}
+
+fn write_variable_sequence<T: Ssz>(values: &[T], output: &mut [u8]) -> Result<(), CodecError> {
+    let leading = values
+        .len()
+        .checked_mul(4)
+        .ok_or(CodecError::SizeOverflow)?;
     let mut writer = ContainerWriter::new(output, leading)?;
     for value in values {
-        writer.push_layout(value, value.encoded_len()?, fixed)?;
+        writer.push_layout(value, value.encoded_len()?, false)?;
+    }
+    writer.finish()
+}
+
+fn write_unrepresentable_fixed<T: Ssz>(values: &[T], output: &mut [u8]) -> Result<(), CodecError> {
+    let mut writer = ContainerWriter::new(output, output.len())?;
+    for value in values {
+        writer.push_layout(value, value.encoded_len()?, true)?;
     }
     writer.finish()
 }

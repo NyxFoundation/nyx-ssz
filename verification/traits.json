@@ -11,12 +11,16 @@
     ],
     "members": {
       "TYPE": "assoc_const",
+      "TRUSTED_FIXED_LAYOUT": "assoc_const",
       "encode": "function",
+      "encode_append": "function",
+      "encode_append_prevalidated": "function",
       "decode": "function",
       "hash_tree_root": "function",
       "encoded_len": "function",
       "encode_into": "function",
       "fixed_sequence_bytes": "function",
+      "encode_fixed_sequence": "function",
       "decode_fixed_sequence": "function"
     },
     "instances": [

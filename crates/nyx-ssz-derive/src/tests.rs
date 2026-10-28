@@ -47,6 +47,14 @@ fn should_generate_complete_rust_items_when_generic_or_renamed_types_are_valid()
         "enum A<T> { #[ssz(selector=127)] B(T), #[ssz(selector=1)] C(T) }",
     ] {
         let tokens = expansion(source).unwrap();
-        assert!(syn::parse2::<syn::File>(tokens).is_ok(), "invalid output for {source}");
+        assert!(
+            syn::parse2::<syn::File>(tokens.clone()).is_ok(),
+            "invalid output for {source}"
+        );
+        if source.starts_with("struct A") {
+            let generated = tokens.to_string();
+            assert!(generated.contains("encode_fixed_sequence"));
+            assert!(generated.contains("decode_fixed_sequence"));
+        }
     }
 }

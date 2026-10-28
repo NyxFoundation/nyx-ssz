@@ -60,8 +60,12 @@ def load_scope(path=SCOPE):
 
 
 def validate_unproved_members(scope):
-    expected = ["nyx_ssz::codec::Ssz::encoded_len", "nyx_ssz::codec::Ssz::encode_into",
+    expected = ["nyx_ssz::codec::Ssz::TRUSTED_FIXED_LAYOUT",
+                "nyx_ssz::codec::Ssz::encode_append",
+                "nyx_ssz::codec::Ssz::encode_append_prevalidated",
+                "nyx_ssz::codec::Ssz::encoded_len", "nyx_ssz::codec::Ssz::encode_into",
                 "nyx_ssz::codec::Ssz::fixed_sequence_bytes",
+                "nyx_ssz::codec::Ssz::encode_fixed_sequence",
                 "nyx_ssz::codec::Ssz::decode_fixed_sequence"]
     if scope.get("unproved_trait_members") != expected:
         raise ValueError("extended trait member laws must remain explicitly unproved")

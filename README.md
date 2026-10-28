@@ -2,8 +2,9 @@
 
 Fast, security-focused SSZ codecs, Merkle trees, typed paths, and proofs for Rust.
 
-nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, no crate-local
-`unsafe`, pinned RustCrypto SHA-256, immutable metadata, and complete coverage of all **4,601**
+nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, one audited
+native integer copy module as its only crate-local `unsafe`, pinned RustCrypto SHA-256,
+immutable metadata, and complete coverage of all **4,601**
 official corpus cases, with native tests across x86_64, ARM64, and 32-bit CI. It is not yet published to crates.io,
 formally verified in full, or presented as a security audit.
 
@@ -18,7 +19,7 @@ formally verified in full, or presented as a security audit.
 - 92%+ workspace line coverage, reproducible benchmarks, pinned dependencies, and explicit
   proof-status tracking for every public operation.
 
-**Optimization method:** nyx-ssz combines compile-time layouts, direct destination writes, stack-based offset validation, safe native integer byte views, and direct 32-byte Merkle packing to remove redundant scans, temporary buffers, and allocator traffic.
+**Optimization method:** nyx-ssz combines compile-time layouts, capacity-based append encoding, generated fixed-container bulk codecs, audited native integer copies, precomputed zero hashes, and direct 32-byte Merkle packing to remove redundant scans, zero-fills, temporary buffers, and allocator traffic.
 
 **Aeneas method:** the verification pipeline extracts the actual pinned Rust sources through Charon/Aeneas, kernel-checks the declared refinement slice in Lean, and fails closed unless every remaining API is explicitly linked to an unproved issue.
 
@@ -29,13 +30,14 @@ speedups:
 
 | Operation | nyx-ssz | libssz 0.3.0 | fastssz |
 | --- | ---: | ---: | ---: |
-| Header encode | 45.854 ns | 15.479 ns | 34.910 ns |
-| Mixed encode, 12 KB | 327.242 ns | 151.958 ns | 1,428 ns |
-| Mixed decode, 12 KB | 221.596 ns | 199.537 ns | 6,366 ns |
-| Mixed root | 36.204 µs | 33.568 µs | 43.393 µs |
+| Header encode | 14.270 ns | 22.692 ns | 52.030 ns |
+| Mixed encode, 12 KB | 263.255 ns | 194.898 ns | 1,952 ns |
+| Mixed decode, 12 KB | 217.424 ns | 273.705 ns | 9,823 ns |
+| Mixed root | 53.490 µs | 48.079 µs | 59.962 µs |
 
 Full runs and provenance: [benchmarks](docs/benchmarks.md),
-[fixed encode](docs/fixed-encode.md), and [native integer output](docs/native-sequence-output.md).
+[libssz-inspired optimizations](docs/libssz-optimizations.md), and
+[native integer output](docs/native-sequence-output.md).
 
 ## Install
 

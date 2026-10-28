@@ -1,6 +1,6 @@
 ---
 title: Native SSZ API
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 tags:
   - ssz
   - rust
@@ -58,8 +58,9 @@ Renaming affects schema/path lookup, not bytes or roots.
 and returns the exact encoded length without building encoded bytes.
 `Ssz::encode_into(&mut [u8]) -> Result<(), CodecError>` writes into an exactly sized slice.
 The library implementations need no encoded-child scratch buffers.
-The existing `encode()` is now a default method: calculate length, allocate one
-zero-initialized output Vec, then write directly into it.
+The default `encode()` calculates length, allocates one zero-initialized output Vec,
+then writes directly into it. Generated containers and owned sequence types override
+that bridge so their validated sizes are reused instead of scanning the same value twice.
 
 ```rust
 use nyx_ssz::codec::Ssz;
@@ -125,8 +126,10 @@ These changed codec laws remain unproved under the existing equivalence backlog.
 
 All-fixed, non-progressive containers validate the declaration and exact body length, then
 split field slices directly. They do not build a range table. Encoding of the same containers
-validates every child in order, applies the four-byte envelope, and writes field bytes directly.
-A deferred native overflow still becomes `SizeOverflow` only after later protocol errors.
+writes field bytes directly. When every field opts into `TRUSTED_FIXED_LAYOUT`, generated
+allocating encode uses compile-time widths without querying each value length; otherwise it
+retains full child classification and error precedence. A deferred native overflow still becomes
+`SizeOverflow` only after later protocol errors.
 Variable and progressive encoding retains `ContainerWriter`; variable decoding uses validated
 stack ranges. A width sum that overflows `usize` is `InvalidLength`, and inputs of at least four
 gigabytes remain `SizeOverflow`, both before any field decoder. Completed fields are dropped
@@ -138,6 +141,28 @@ accepted `Vec`. Decode of an inline vector performs no allocation. These layout 
 native-tested and remain under the unproved codec backlog in
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25).
 
+## Append encode hooks
+
+`Ssz::encode_append` appends canonical bytes to an existing `Vec<u8>` while preserving its
+prefix. The default validates `encoded_len`, then uses an initialized destination slice and
+restores the original length on error. `encode_append_prevalidated` is an optional specialization
+for codecs whose caller has already retained the exact length. Parents reject hooks that append
+a different number of bytes and truncate the failed append.
+
+Scalars, owned byte collections and integer sequences append directly with safe
+`extend_from_slice`. Generated variable containers reserve the exact total, append fixed fields
+and four-byte offsets in header order, then append variable bodies. This follows libssz's
+capacity-plus-append technique without introducing another unsafe region or zero-initializing
+the complete output allocation.
+
+`TRUSTED_FIXED_LAYOUT` defaults to false. It may be true only when the declared fixed width and
+`encode_into` validation agree without a separate value-length query. Primitive integers,
+booleans, byte vectors and recursively trusted derived containers opt in. External codecs retain
+the defensive path unless they explicitly accept this contract.
+
+All three members and the generated append transformation remain unproved under
+[#29](https://github.com/NyxFoundation/nyx-ssz/issues/29).
+
 ## Fixed-sequence byte hook
 
 `Ssz::fixed_sequence_bytes(values)` is a provided optimization hook. The default returns
@@ -147,10 +172,22 @@ safe `bytemuck::cast_slice`; boolean, U256 and big-endian targets keep the scala
 
 Parents verify that a returned view matches the declared fixed width and element count.
 Encoding copies the complete view once, while basic collection roots split it directly into
-32-byte Merkle chunks. No borrowed bytes escape the source slice and no crate-local unsafe
-code is used. The hook contract and optimized parent equivalence are unproved under
+32-byte Merkle chunks. No borrowed bytes escape the source slice, and this borrowed-view
+hook itself uses safe Rust. The hook contract and optimized parent equivalence are unproved under
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25). See
 [native integer sequence output](native-sequence-output.md).
+
+## Fixed-sequence encode hook
+
+`Ssz::encode_fixed_sequence(values, output)` is a provided specialization hook invoked only
+after the parent has validated every element and the total output length. The default returns
+`None`, retaining the generic element writer. Derived all-fixed containers override it with a
+generated field loop that reuses compile-time widths and avoids repeating container-level
+classification for every element. External fixed codecs keep the generic path, including its
+support for codecs whose runtime length disagrees with their declaration.
+
+The new hook and generated transformation remain unproved under
+[#29](https://github.com/NyxFoundation/nyx-ssz/issues/29).
 
 ## Fixed-sequence decode hook
 
@@ -161,10 +198,11 @@ implementations and derive users need no override. Its generic default keeps ind
 decode callbacks. Variable-width declarations return `BadDeclaration`.
 
 Unsigned integer implementations override it with exact-size collection. On little-endian
-targets, aligned u8 through u128 input uses `bytemuck::try_cast_slice` followed by a safe
-slice clone; unaligned input, big-endian targets and U256 retain fixed-byte conversion.
-There is no crate-local unsafe code, and alignment is checked rather than assumed. Boolean
-values keep per-element validity checking.
+targets, u8 through u128 use one audited byte copy into a correctly aligned `Vec<T>`, including
+unaligned input. The private unsafe boundary is limited to unsigned primitives, checks byte
+width before dispatch, allocates the exact element capacity, copies every byte before `set_len`,
+and is exercised under Miri. Big-endian targets and U256 retain fixed-byte conversion;
+Boolean values keep per-element validity checking.
 
 Typed parents validate declaration, exact count/alignment, capacity and their
 four-byte envelope before dispatch. Returned success counts are checked; a custom

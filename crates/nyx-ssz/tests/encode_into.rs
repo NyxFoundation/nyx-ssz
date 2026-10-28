@@ -11,6 +11,10 @@ use nyx_ssz::{
 fn check<T: Ssz>(value: T, expected: &[u8]) {
     assert_eq!(value.encoded_len(), Ok(expected.len()));
     assert_eq!(value.encode().unwrap(), expected);
+    let mut appended = vec![0xcc];
+    value.encode_append(&mut appended).unwrap();
+    assert_eq!(&appended[..1], &[0xcc]);
+    assert_eq!(&appended[1..], expected);
     let mut guarded = vec![0xa5; expected.len() + 2];
     value
         .encode_into(&mut guarded[1..expected.len() + 1])
@@ -151,6 +155,38 @@ impl Ssz for BadSequenceBytes {
     fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
         self.0.hash_tree_root()
     }
+}
+
+struct BadAppend;
+impl Ssz for BadAppend {
+    const TYPE: &'static TypeDescriptor = &TypeDescriptor::Uint(1);
+    fn encode_append_prevalidated(&self, output: &mut Vec<u8>) -> Option<Result<(), CodecError>> {
+        output.extend_from_slice(&[1, 2]);
+        Some(Ok(()))
+    }
+    fn encoded_len(&self) -> Result<usize, CodecError> {
+        Ok(1)
+    }
+    fn encode_into(&self, output: &mut [u8]) -> Result<(), CodecError> {
+        1_u8.encode_into(output)
+    }
+    fn decode(_: &[u8]) -> Result<Self, CodecError> {
+        Ok(Self)
+    }
+    fn hash_tree_root(&self) -> Result<[u8; 32], CodecError> {
+        1_u8.hash_tree_root()
+    }
+}
+
+#[test]
+fn should_restore_the_prefix_when_an_append_hook_writes_the_wrong_length() {
+    let mut output = vec![9];
+    assert_eq!(
+        BadAppend.encode_append(&mut output),
+        Err(CodecError::InvalidLength)
+    );
+    assert_eq!(output, [9]);
+    assert_eq!(BadAppend.encode(), Err(CodecError::InvalidLength));
 }
 
 #[test]

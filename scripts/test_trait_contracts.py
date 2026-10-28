@@ -86,6 +86,20 @@ class TraitContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "declared default"):
             validate_traits(data, [CONTRACT])
 
+    def test_should_allow_inherited_associated_constants_only_when_they_have_defaults(self):
+        data = document()
+        data["index"]["1"]["inner"]["trait"]["items"].append(9)
+        data["index"]["9"] = {
+            "name": "TRUSTED",
+            "inner": {"assoc_const": {"value": "false"}},
+        }
+        contract = copy.deepcopy(CONTRACT)
+        contract["members"]["TRUSTED"] = "assoc_const"
+        self.assertIn("9", validate_traits(data, [contract]))
+        data["index"]["9"]["inner"]["assoc_const"]["value"] = None
+        with self.assertRaisesRegex(ValueError, "member inventory"):
+            validate_traits(data, [contract])
+
     def test_should_inventory_generic_type_and_const_arguments_when_a_collection_is_registered(self):
         contracts = copy.deepcopy([CONTRACT])
         contracts[0]["instances"][0]["type"] = "crate::collections::Vector<T,N>"

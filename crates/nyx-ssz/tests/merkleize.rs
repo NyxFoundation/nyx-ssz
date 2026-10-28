@@ -5,6 +5,24 @@ fn zero_root(depth: usize) -> Node {
     (0..depth).fold([0; 32], |node, _| hash_pair(&node, &node))
 }
 
+fn reference_root(chunks: &[Node], depth: usize) -> Node {
+    if chunks.is_empty() {
+        return zero_root(depth);
+    }
+    if depth == 0 {
+        return chunks[0];
+    }
+    let below = depth - 1;
+    let half = 1usize << below;
+    let left = reference_root(&chunks[..chunks.len().min(half)], below);
+    let right = if chunks.len() <= half {
+        zero_root(below)
+    } else {
+        reference_root(&chunks[half..], below)
+    };
+    hash_pair(&left, &right)
+}
+
 #[test]
 fn should_return_the_zero_node_when_no_leaves_or_capacity_are_present() {
     assert_eq!(merkleize(&[], None), Ok([0; 32]));
@@ -63,6 +81,20 @@ fn should_respect_declared_capacity_when_a_small_value_occupies_a_deeper_tree() 
     let expected = hash_pair(&hash_pair(&leaf, &[0; 32]), &zero_root(1));
     assert_eq!(merkleize(&[leaf], Some(3)), Ok(expected));
     assert_eq!(merkleize(&[], Some(3)), Ok(zero_root(2)));
+}
+
+#[test]
+fn should_match_recursive_merkleization_across_the_iterative_frontier_boundary() {
+    for count in [17_usize, 31, 32, 33, 100] {
+        let chunks: Vec<Node> = (0..count).map(|value| [value as u8; 32]).collect();
+        for capacity in [count, count + 1, count.next_power_of_two()] {
+            let depth = capacity.next_power_of_two().trailing_zeros() as usize;
+            assert_eq!(
+                merkleize(&chunks, Some(capacity)),
+                Ok(reference_root(&chunks, depth))
+            );
+        }
+    }
 }
 
 #[test]

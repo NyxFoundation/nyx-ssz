@@ -132,16 +132,19 @@ def validate_implementations(index, trait_identifier, declaration, contract):
         implementation = index[str(identifier)]["inner"]["impl"]
         discovered.append(instance_type(implementation, trait_identifier))
         defaults = {index[str(item)]["name"] for item in declaration["items"]
-                    if index[str(item)]["inner"].get("function", {}).get("has_body") is True}
+                    if (index[str(item)]["inner"].get("function", {}).get("has_body") is True or
+                        index[str(item)]["inner"].get("assoc_const", {}).get("value") is not None)}
+        method_defaults = {index[str(item)]["name"] for item in declaration["items"]
+                           if index[str(item)]["inner"].get("function", {}).get("has_body") is True}
         provided = implementation.get("provided_trait_methods", [])
         if not isinstance(provided, list) or any(not isinstance(name, str) for name in provided):
             raise ValueError("invalid inherited trait methods")
-        if len(provided) != len(set(provided)) or not set(provided) <= defaults:
+        if len(provided) != len(set(provided)) or not set(provided) <= method_defaults:
             raise ValueError("inherited trait method has no declared default body")
         actual_members = member_inventory(index, implementation["items"])
-        # Rustdoc lists all trait-provided methods, including explicit overrides.
+        # Inherited defaults are absent; explicit overrides remain in the impl inventory.
         expected_members = {name: kind for name, kind in contract["members"].items()
-                            if name not in provided or name in actual_members}
+                            if name not in defaults or name in actual_members}
         if actual_members != expected_members:
             raise ValueError("trait implementation member inventory differs")
         items.update(str(value) for value in implementation["items"])

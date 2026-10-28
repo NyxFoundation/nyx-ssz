@@ -1,5 +1,5 @@
 #![doc = include_str!("../../../README.md")]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![cfg_attr(feature = "verification", feature(register_tool))]
 #![cfg_attr(feature = "verification", register_tool(verify))]
 
@@ -13,6 +13,7 @@ mod bit_encoding;
 mod bit_storage;
 pub mod bitcollections;
 pub mod bitfield;
+mod bulk;
 pub mod bytecollections;
 pub mod bytes;
 pub mod codec;
