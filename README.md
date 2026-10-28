@@ -2,26 +2,43 @@
 
 Fast, security-focused SSZ codecs, Merkle trees, typed paths, and proofs for Rust.
 
-nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, one audited
-native integer copy module as its only crate-local `unsafe`, pinned RustCrypto SHA-256,
-immutable metadata, and complete coverage of all **4,601**
-official corpus cases, with native tests across x86_64, ARM64, and 32-bit CI. It is not yet published to crates.io,
-formally verified in full, or presented as a security audit.
+nyx-ssz implements the pinned 13-shape SSZ specification with immutable metadata, fail-fast
+errors, pinned RustCrypto SHA-256, and one audited native integer copy module as its only
+crate-local `unsafe`. It is not yet published to crates.io, formally verified in full, or
+presented as a security audit.
 
-## Why nyx-ssz
+## Design philosophy
+
+- **Correctness before benchmark wins:** preserve canonical bytes, error precedence, checked
+  arithmetic, and ordinary Rust ownership across every optimized path.
+- **General specialization, not fixture-specific code:** derive codecs from static SSZ schemas;
+  do not hard-code benchmark types, values, or collection sizes.
+- **Safe by default:** keep `unsafe` confined to one audited native integer copy boundary and
+  retain portable scalar paths where native assumptions do not hold.
+- **Fail-closed evidence:** pin dependencies and corpora, publish reproducible measurements,
+  and explicitly mark every operation outside the current Lean refinement slice as unproved.
+
+## Capabilities
 
 - Canonical codecs for scalars, byte/bit collections, Vector/List, Progressive collections,
   Container, ProgressiveContainer, and CompatibleUnion.
 - `#[derive(nyx_ssz::Ssz)]`, allocation-aware direct encoding, sparse node access, and
   single/multiproof construction.
-- Fail-fast `Result<T, CodecError>` decoding with validated offsets, checked arithmetic, and
-  ordinary Rust drop behavior.
-- 92%+ workspace line coverage, reproducible benchmarks, pinned dependencies, and explicit
-  proof-status tracking for every public operation.
+- Fail-fast `Result<T, CodecError>` decoding with validated offsets and no partial-value API.
+- Complete coverage of 4,601 official cases and 92%+ workspace line coverage.
 
-**Optimization method:** nyx-ssz combines compile-time layouts, capacity-based append encoding, generated fixed-container bulk codecs, audited native integer copies, precomputed zero hashes, and direct 32-byte Merkle packing to remove redundant scans, zero-fills, temporary buffers, and allocator traffic.
+## Optimization techniques
 
-**Aeneas method:** the verification pipeline extracts the actual pinned Rust sources through Charon/Aeneas, kernel-checks the declared refinement slice in Lean, and fails closed unless every remaining API is explicitly linked to an unproved issue.
+- Const-evaluated container validation, field widths, and fixed layouts.
+- Exact-capacity append encoding without complete-output zero-fills or field-sized temporary
+  buffers.
+- Generated fixed-container sequence codecs that validate once and write fields directly.
+- Borrowed native integer byte views plus one sealed, audited bulk decode copy.
+- Stack-based variable-container ranges and fail-fast child decoding.
+- Precomputed zero hashes, iterative Merkle frontiers, and direct 32-byte basic-value packing.
+
+The Aeneas pipeline extracts the pinned Rust sources through Charon/Aeneas, kernel-checks the
+stated refinement slice in Lean, and rejects undocumented proof gaps.
 
 ## Performance snapshot
 
