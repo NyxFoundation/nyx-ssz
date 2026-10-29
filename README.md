@@ -85,8 +85,8 @@ assert_eq!(&hash_tree_root(&value)?[..2], bytes.as_slice());
 
 ## Verification status
 
-The current-source pipeline freshly extracts and Lean-kernel-checks 12 hash-independent
-index operations; the remaining 105 public APIs, 17 codec dictionaries, derive transformations,
+The current-source pipeline freshly extracts and Lean-kernel-checks 24 hash-independent
+index and scalar operations; the remaining 93 public APIs, 17 codec dictionaries, derive transformations,
 and RustCrypto-dependent laws are explicitly unproved under
 [#24](https://github.com/NyxFoundation/nyx-ssz/issues/24),
 [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25), and

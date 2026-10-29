@@ -1,7 +1,7 @@
 ---
 title: Verification scope and trust boundary
-last_updated: 2026-10-24
-verification_status: current-12-operation-slice-explicit-issue-linked-skips
+last_updated: 2026-10-29
+verification_status: current-24-operation-slice-explicit-issue-linked-skips
 tags:
   - ssz
   - aeneas
@@ -15,8 +15,8 @@ All 13 shapes have fail-fast codecs returning `CodecError`; generated partial ow
 state has been removed. Typed paths, sparse node access and proof construction are native-tested.
 All 4,601 pinned official corpus cases pass with preserved source/version-alignment checks.
 
-The current gate freshly extracts and kernel-checks 12 hash-independent gindex/helper-index operations.
-It explicitly reports the remaining 105 documented APIs, 17 codec dictionaries and derive
+The current gate freshly extracts and kernel-checks 24 hash-independent index and scalar operations.
+It explicitly reports the remaining 93 documented APIs, 17 codec dictionaries and derive
 transformations as unproved with linked Issues. Actual metadata extraction is rejected for
 nested-loop returns. The six RustCrypto-dependent laws are unproved under
 [#27](https://github.com/NyxFoundation/nyx-ssz/issues/27). See [exact current scope and reproduction](current-verification.md).

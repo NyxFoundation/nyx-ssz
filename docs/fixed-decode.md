@@ -1,6 +1,6 @@
 ---
 title: Fixed-width decode optimization
-last_updated: 2026-10-24
+last_updated: 2026-10-29
 tags:
   - ssz
   - rust
@@ -94,7 +94,7 @@ checked without allocating huge inputs.
 
 All 4,601 pinned official corpus cases pass on the final implementation. Host and 32-bit
 workspace tests, Clippy and formatting pass; measured Rust line coverage is 95.32%.
-The 12 hash-independent current-source proofs remain freshly extracted and kernel checked.
+The 24 hash-independent index and scalar proofs are freshly extracted and kernel checked.
 
 These changed codec implementations are **not formally proved**. Their equivalence laws
 remain in [#25](https://github.com/NyxFoundation/nyx-ssz/issues/25); the direct-encode member

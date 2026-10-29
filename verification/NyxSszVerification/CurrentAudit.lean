@@ -1,4 +1,6 @@
 import Lean
+import NyxSszVerification.CurrentBoolean
+import NyxSszVerification.CurrentUnsigned
 import NyxSszVerification.Gindex
 import NyxSszVerification.Multiproof.Collect
 
