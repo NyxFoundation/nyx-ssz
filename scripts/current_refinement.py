@@ -17,7 +17,9 @@ import tomllib
 ROOT = legacy.ROOT
 VERIFICATION = legacy.VERIFICATION
 SCOPE = VERIFICATION / "current-scope.json"
-MODULES = {f"NyxSszRust/{name}.lean" for name in ("Gindex", "Merkle", "Multiproof")}
+STRUCTURAL_MODULES = {f"NyxSszRust/{name}.lean" for name in ("Gindex", "Merkle", "Multiproof")}
+SCALAR_MODULE = "NyxSszRust/CurrentScalar.lean"
+MODULES = STRUCTURAL_MODULES | {SCALAR_MODULE}
 
 
 def load_scope(path=SCOPE):
@@ -74,6 +76,7 @@ def validate_unproved_members(scope):
 def validate_roots():
     roots = {
         "current_gindex.rs": ("//! Current hash-independent production files, preserving public module paths.\n", ["gindex", "merkle/error", "multiproof/helpers"]),
+        "current_scalar.rs": ("//! Current dependency-free scalar production file, preserving its public module path.\n", ["scalar/basic"]),
         "current_metadata.rs": ("//! Extract the actual shared metadata implementation without Cargo host tools.\n", ["error", "type_info"]),
     }
     for name, (header, modules) in roots.items():
@@ -95,10 +98,18 @@ def check_source_bindings(document, scope):
     functions = {aliases.get(key, "::".join(row["path"])): key for key, row in paths.items()
                  if row["crate_id"] == 0 and row["kind"] == "function"}
     for name in scope["proven"]:
-        module = "gindex.rs" if name.startswith("nyx_ssz::gindex::") else "multiproof/helpers.rs"
+        if name.startswith("nyx_ssz::gindex::"):
+            module, expected_name = "gindex.rs", name
+        elif name.startswith("nyx_ssz::scalar::"):
+            module = "scalar/basic.rs"
+            expected_name = name.replace("nyx_ssz::scalar::", "nyx_ssz::scalar::basic::")
+        elif name == "nyx_ssz::multiproof::helper_indices":
+            module = "multiproof/helpers.rs"
+            expected_name = "nyx_ssz::multiproof::helpers::helper_indices"
+        else:
+            raise ValueError("proved operation lacks an explicit production source binding")
         identifier = functions[name]
         actual = index[identifier]["span"]["filename"]
-        expected_name = name if module == "gindex.rs" else "nyx_ssz::multiproof::helpers::helper_indices"
         if "::".join(paths[identifier]["path"]) != expected_name:
             raise ValueError("public operation is not bound to its extracted production source")
         if (ROOT / actual).resolve() != ROOT / "crates/nyx-ssz/src" / module:
@@ -175,17 +186,28 @@ def aeneas_command(pins, destination, llbc):
             "-no-progress-bar", "-dest", destination, llbc]]
 
 
-def extract_core(pins, targets, destination):
+def extract_root(pins, targets, destination, source):
     names = [row["rust"] for row in targets]
-    llbc = charon_root(pins, destination, "verification/current_gindex.rs", names)
+    llbc = charon_root(pins, destination, source, names)
     legacy.assert_safe_drops(json.loads(llbc.read_text()))
     legacy.run(aeneas_command(pins, destination, llbc))
     artifacts = split_model((destination / "NyxSsz.lean").read_text())
     legacy.assert_extracted_targets(artifacts, targets)
-    selected = {name: text.encode() for name, text in artifacts.items() if name != "NyxSszRust.lean"}
-    if selected.keys() != MODULES:
-        raise ValueError("current extraction dependency closure changed")
-    return selected
+    return {name: text.encode() for name, text in artifacts.items() if name != "NyxSszRust.lean"}
+
+
+def extract_core(pins, targets, destination):
+    scalar = [row for row in targets if row["rust"].startswith("nyx_ssz::scalar::")]
+    structural = [row for row in targets if row not in scalar]
+    artifacts = extract_root(pins, structural, destination / "structural", "verification/current_gindex.rs")
+    if artifacts.keys() != STRUCTURAL_MODULES:
+        raise ValueError("current structural extraction dependency closure changed")
+    scalar_artifacts = extract_root(
+        pins, scalar, destination / "scalar", "verification/current_scalar.rs")
+    if scalar_artifacts.keys() != {"NyxSszRust/Scalar.lean"}:
+        raise ValueError("current scalar extraction dependency closure changed")
+    artifacts[SCALAR_MODULE] = scalar_artifacts["NyxSszRust/Scalar.lean"]
+    return artifacts
 
 
 def probe_metadata(pins, scope, destination):

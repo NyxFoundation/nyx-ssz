@@ -21,8 +21,8 @@ class CurrentRefinementTests(unittest.TestCase):
 
     def test_should_classify_every_current_operation_without_overlapping_proof_claims(self):
         scope = self.scope()
-        self.assertEqual(len(current.current_targets(scope)), 12)
-        self.assertEqual(len(scope["skipped"]), 105)
+        self.assertEqual(len(current.current_targets(scope)), 24)
+        self.assertEqual(len(scope["skipped"]), 93)
         self.assertEqual(len(scope["skipped_traits"]), 17)
         current.validate_roots()
         self.assertFalse(set(scope["proven"]) & set(scope["skipped"]))

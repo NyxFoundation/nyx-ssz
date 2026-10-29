@@ -1,6 +1,6 @@
 ---
 title: Native SSZ API
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 tags:
   - ssz
   - rust
@@ -103,7 +103,7 @@ do not impose that budget on top-level opaque bytes or union prefixes.
 The new member laws and default-method bridge are **not formally proved**.
 The historical `CodecLaw` does not cover these methods; the full proof gate rejects
 that incomplete contract until [#29](https://github.com/NyxFoundation/nyx-ssz/issues/29)
-is resolved. The 12 hash-independent current-source proofs remain checked.
+is resolved. The 24 hash-independent index and scalar current-source proofs remain checked.
 
 ## Fixed-width decoding
 

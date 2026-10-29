@@ -1,6 +1,6 @@
 ---
 title: Current-source proof scope and explicit skips
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 tags:
   - ssz
   - aeneas
@@ -17,17 +17,20 @@ all 4,601 pinned corpus cases. **Full-library equivalence is not proved.**
 | --- | --- |
 | Generalized-index arithmetic and paths | 11 |
 | Multiproof helper indices | 1 |
-| Total | 12 |
+| Boolean and uint8/16/32/64/128 encode/decode | 12 |
+| Total | 24 |
 
 `verification/current_gindex.rs` includes the actual production `gindex.rs`,
 `merkle/error.rs` and `multiproof/helpers.rs` by Rust path, without copying their code.
+`verification/current_scalar.rs` likewise includes the dependency-free production scalar module;
+its generated model is checked separately from the historical uint256 model.
 The latter two are re-exported by the runtime under the same public `merkle` and
 `multiproof` paths. Extraction preserves those public namespaces. Root contents are checked.
 Compiled rustdoc identities/source spans bind those public re-exports to the extracted
 production files. The error/helper split removes the hashing dependency without a fake hasher.
 
 Charon and Aeneas extract those files with the pinned compiler/MIR sysroot and tools.
-Three checked-in generated modules must match fresh extraction byte for byte.
+Four checked-in generated modules must match fresh extraction byte for byte.
 Existing equivalence theorems over these definitions are rechecked by Lean's kernel.
 The audit binds every registered operation to its actual theorem and rejects foreign axioms,
 native-decision axioms and unrelated theorem registrations. Allowed foundational axioms remain
@@ -35,7 +38,7 @@ native-decision axioms and unrelated theorem registrations. Allowed foundational
 
 ## Explicitly unproved
 
-`verification/current-scope.json` enumerates all **105 remaining documented APIs**
+`verification/current-scope.json` enumerates all **93 remaining documented APIs**
 and **17 codec dictionaries**, plus the derive-transformation backlog.
 Every documented API must be exactly in the proved or skipped set; additions, stale
 registrations, overlaps or missing dictionary status fail the gate. Public re-exports are
@@ -93,9 +96,9 @@ python3 scripts/verify.py bootstrap
 python3 scripts/current_refinement.py check
 ```
 
-The check performs real extraction, freshness/API checks, metadata refusal probing, crypto
+The check performs real extraction of both structural and scalar roots, freshness/API checks, metadata refusal probing, crypto
 skip fingerprint validation, kernel checking, negative audit tests and dependency-pin validation.
-`extract` regenerates the three current modules but does not establish proof success.
+`extract` regenerates the four current modules but does not establish proof success.
 `lake build` defaults to the current audit. The older `current_merkle.rs` extraction root
 includes the hash-dependent program and is not an active passing proof entry point.
 

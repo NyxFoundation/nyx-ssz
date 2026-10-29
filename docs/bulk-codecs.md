@@ -1,6 +1,6 @@
 ---
 title: Bulk codec optimization
-last_updated: 2026-10-23
+last_updated: 2026-10-29
 tags:
   - benchmarks
   - codecs
@@ -112,8 +112,8 @@ coverage is 95.27% (80% gate). Tests additionally check every unsigned width,
 unaligned little-endian input, invalid Boolean prefixes, layout/capacity precedence,
 wrong-count override ownership, malformed metadata and unrepresentable fixed widths.
 
-Current-source Aeneas extraction and Lean kernel checking still prove the same 12
-hash-independent operations. The other 105 APIs, 17 dictionaries and derive
+Current-source Aeneas extraction and Lean kernel checking now prove 24
+hash-independent index and scalar operations. The other 93 APIs, 17 dictionaries and derive
 transformations remain unproved/skipped. The new decode member and integer-override
 laws are explicitly unproved under [#32](https://github.com/NyxFoundation/nyx-ssz/issues/32);
 encode member laws remain [#29](https://github.com/NyxFoundation/nyx-ssz/issues/29).
