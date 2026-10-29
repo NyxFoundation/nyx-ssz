@@ -42,19 +42,24 @@ stated refinement slice in Lean, and rejects undocumented proof gaps.
 
 ## Performance snapshot
 
-AMD Ryzen 9 PRO 8945HS, CPU 0, five-round medians; shared-host observations, not guaranteed
-speedups:
+2026-10-29, AMD Ryzen 9 PRO 8945HS, CPU 0, five-round medians of per-run means in
+nanoseconds per operation. Header is a fixed 112-byte container; Mixed is a 12,304-byte
+container with a 4 KiB byte list and 1,024 `u64` values. Lower is better, including the
+`nyx/libssz` ratio.
 
-| Operation | nyx-ssz | libssz 0.3.0 | fastssz |
-| --- | ---: | ---: | ---: |
-| Header encode | 14.270 ns | 22.692 ns | 52.030 ns |
-| Mixed encode, 12 KB | 263.255 ns | 194.898 ns | 1,952 ns |
-| Mixed decode, 12 KB | 217.424 ns | 273.705 ns | 9,823 ns |
-| Mixed root | 53.490 µs | 48.079 µs | 59.962 µs |
+| Operation | nyx-ssz | libssz 0.3.0 | nyx/libssz | fastssz |
+| --- | ---: | ---: | ---: | ---: |
+| Header encode | **15.542** | 24.214 | **0.64x** | 53.000 |
+| Header decode | 11.021 | **10.343** | 1.07x | 55.720 |
+| Header root | 1,009.017 | **781.256** | 1.29x | 1,047.000 |
+| Mixed encode | 279.186 | **234.224** | 1.19x | 2,313.000 |
+| Mixed decode | **257.872** | 334.856 | **0.77x** | 9,724.000 |
+| Mixed root | 56,480.022 | **52,793.083** | 1.07x | 66,774.000 |
 
-Full runs and provenance: [benchmarks](docs/benchmarks.md),
-[libssz-inspired optimizations](docs/libssz-optimizations.md), and
-[native integer output](docs/native-sequence-output.md).
+These are shared-host observations, not guaranteed speedups. All implementations agreed on
+exact bytes and roots. See the [raw five-round report](docs/data/readme-performance-2026-10-29.json),
+[benchmark methodology](docs/benchmarks.md), and
+[libssz-inspired optimization details](docs/libssz-optimizations.md).
 
 ## Install
 
