@@ -2,42 +2,64 @@
 
 Fast, security-focused SSZ codecs, Merkle trees, typed paths, and proofs for Rust.
 
-nyx-ssz implements the pinned 13-shape SSZ specification with fail-fast errors, one audited
-native integer copy module as its only crate-local `unsafe`, pinned RustCrypto SHA-256,
-immutable metadata, and complete coverage of all **4,601**
-official corpus cases, with native tests across x86_64, ARM64, and 32-bit CI. It is not yet published to crates.io,
-formally verified in full, or presented as a security audit.
+nyx-ssz implements the pinned 13-shape SSZ specification with immutable metadata, fail-fast
+errors, pinned RustCrypto SHA-256, and one audited native integer copy module as its only
+crate-local `unsafe`. It is not yet published to crates.io, formally verified in full, or
+presented as a security audit.
 
-## Why nyx-ssz
+## Design philosophy
+
+- **Correctness before benchmark wins:** preserve canonical bytes, error precedence, checked
+  arithmetic, and ordinary Rust ownership across every optimized path.
+- **General specialization, not fixture-specific code:** derive codecs from static SSZ schemas;
+  do not hard-code benchmark types, values, or collection sizes.
+- **Safe by default:** keep `unsafe` confined to one audited native integer copy boundary and
+  retain portable scalar paths where native assumptions do not hold.
+- **Fail-closed evidence:** pin dependencies and corpora, publish reproducible measurements,
+  and explicitly mark every operation outside the current Lean refinement slice as unproved.
+
+## Capabilities
 
 - Canonical codecs for scalars, byte/bit collections, Vector/List, Progressive collections,
   Container, ProgressiveContainer, and CompatibleUnion.
 - `#[derive(nyx_ssz::Ssz)]`, allocation-aware direct encoding, sparse node access, and
   single/multiproof construction.
-- Fail-fast `Result<T, CodecError>` decoding with validated offsets, checked arithmetic, and
-  ordinary Rust drop behavior.
-- 92%+ workspace line coverage, reproducible benchmarks, pinned dependencies, and explicit
-  proof-status tracking for every public operation.
+- Fail-fast `Result<T, CodecError>` decoding with validated offsets and no partial-value API.
+- Complete coverage of 4,601 official cases and 92%+ workspace line coverage.
 
-**Optimization method:** nyx-ssz combines compile-time layouts, capacity-based append encoding, generated fixed-container bulk codecs, audited native integer copies, precomputed zero hashes, and direct 32-byte Merkle packing to remove redundant scans, zero-fills, temporary buffers, and allocator traffic.
+## Optimization techniques
 
-**Aeneas method:** the verification pipeline extracts the actual pinned Rust sources through Charon/Aeneas, kernel-checks the declared refinement slice in Lean, and fails closed unless every remaining API is explicitly linked to an unproved issue.
+- Const-evaluated container validation, field widths, and fixed layouts.
+- Exact-capacity append encoding without complete-output zero-fills or field-sized temporary
+  buffers.
+- Generated fixed-container sequence codecs that validate once and write fields directly.
+- Borrowed native integer byte views plus one sealed, audited bulk decode copy.
+- Stack-based variable-container ranges and fail-fast child decoding.
+- Precomputed zero hashes, iterative Merkle frontiers, and direct 32-byte basic-value packing.
+
+The Aeneas pipeline extracts the pinned Rust sources through Charon/Aeneas, kernel-checks the
+stated refinement slice in Lean, and rejects undocumented proof gaps.
 
 ## Performance snapshot
 
-AMD Ryzen 9 PRO 8945HS, CPU 0, five-round medians; shared-host observations, not guaranteed
-speedups:
+2026-10-29, AMD Ryzen 9 PRO 8945HS, CPU 0, five-round medians of per-run means in
+nanoseconds per operation. Header is a fixed 112-byte container; Mixed is a 12,304-byte
+container with a 4 KiB byte list and 1,024 `u64` values. Lower is better, including the
+`nyx/libssz` ratio.
 
-| Operation | nyx-ssz | libssz 0.3.0 | fastssz |
-| --- | ---: | ---: | ---: |
-| Header encode | 14.270 ns | 22.692 ns | 52.030 ns |
-| Mixed encode, 12 KB | 263.255 ns | 194.898 ns | 1,952 ns |
-| Mixed decode, 12 KB | 217.424 ns | 273.705 ns | 9,823 ns |
-| Mixed root | 53.490 µs | 48.079 µs | 59.962 µs |
+| Operation | nyx-ssz | libssz 0.3.0 | nyx/libssz | fastssz |
+| --- | ---: | ---: | ---: | ---: |
+| Header encode | **15.542** | 24.214 | **0.64x** | 53.000 |
+| Header decode | 11.021 | **10.343** | 1.07x | 55.720 |
+| Header root | 1,009.017 | **781.256** | 1.29x | 1,047.000 |
+| Mixed encode | 279.186 | **234.224** | 1.19x | 2,313.000 |
+| Mixed decode | **257.872** | 334.856 | **0.77x** | 9,724.000 |
+| Mixed root | 56,480.022 | **52,793.083** | 1.07x | 66,774.000 |
 
-Full runs and provenance: [benchmarks](docs/benchmarks.md),
-[libssz-inspired optimizations](docs/libssz-optimizations.md), and
-[native integer output](docs/native-sequence-output.md).
+These are shared-host observations, not guaranteed speedups. All implementations agreed on
+exact bytes and roots. See the [raw five-round report](docs/data/readme-performance-2026-10-29.json),
+[benchmark methodology](docs/benchmarks.md), and
+[libssz-inspired optimization details](docs/libssz-optimizations.md).
 
 ## Install
 
