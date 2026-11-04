@@ -1,6 +1,6 @@
 ---
 title: Current-source proof scope and explicit skips
-last_updated: 2026-10-27
+last_updated: 2026-11-05
 tags:
   - ssz
   - aeneas
@@ -32,6 +32,27 @@ Existing equivalence theorems over these definitions are rechecked by Lean's ker
 The audit binds every registered operation to its actual theorem and rejects foreign axioms,
 native-decision axioms and unrelated theorem registrations. Allowed foundational axioms remain
 `propext`, `Classical.choice` and `Quot.sound`, as in the existing audit.
+
+## Explicitly transferred upstream theorems
+
+| Pinned ssz-specs theorem | Current Rust property theorem |
+| --- | --- |
+| [`Ssz.gindexSibling_sibling`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L14) | [`NyxSszVerification.gindex_sibling_sibling`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+
+For every `u128` index, including zero, the root index and `u128::MAX`, two calls to
+production `gindex::sibling` succeed and return the original index. The extracted-program
+statement is the exact equality
+`(NyxSszRust.gindex.sibling index >>= NyxSszRust.gindex.sibling) = RustM.ok index`.
+There is no nonzero, representability or successful-call premise.
+
+The proof composes `gindex_sibling_refines` twice and applies the pinned upstream theorem;
+it does not independently reprove the XOR identity. The current audit imports this theorem,
+checks its axioms, and the refinement gate registers it against the actual extracted operation.
+A negative kernel fixture rejects claiming that two calls on zero return one.
+
+This table records **one explicit theorem transfer**, separately from the **12 proved public
+operations**. It is not a complete inventory of upstream theorems derivable from those operation
+refinements, nor a claim that every other upstream property is unavailable.
 
 ## Explicitly unproved
 
