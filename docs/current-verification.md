@@ -38,6 +38,12 @@ native-decision axioms and unrelated theorem registrations. Allowed foundational
 | Pinned ssz-specs theorem | Current Rust property theorem |
 | --- | --- |
 | [`Ssz.gindexSibling_sibling`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L14) | [`NyxSszVerification.gindex_sibling_sibling`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_half`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L45) | [`NyxSszVerification.gindex_sibling_half`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_parity`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L51) | [`NyxSszVerification.gindex_sibling_parity`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_even`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L63) | [`NyxSszVerification.gindex_sibling_even`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_odd`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L71) | [`NyxSszVerification.gindex_sibling_odd`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexDepth_zero`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L105) | [`NyxSszVerification.gindex_depth_zero`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexLength_root`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L100) | [`NyxSszVerification.gindex_length_root`](../verification/NyxSszVerification/Gindex/Laws.lean) |
 
 For every `u128` index, including zero, the root index and `u128::MAX`, two calls to
 production `gindex::sibling` succeed and return the original index. The extracted-program
@@ -45,12 +51,22 @@ statement is the exact equality
 `(NyxSszRust.gindex.sibling index >>= NyxSszRust.gindex.sibling) = RustM.ok index`.
 There is no nonzero, representability or successful-call premise.
 
-The proof composes `gindex_sibling_refines` twice and applies the pinned upstream theorem;
-it does not independently reprove the XOR identity. The current audit imports this theorem,
-checks its axioms, and the refinement gate registers it against the actual extracted operation.
-A negative kernel fixture rejects claiming that two calls on zero return one.
+The sibling/parent composition also succeeds for every `u128` and returns a parent whose
+natural-number value is `index / 2`. Sibling parity is complemented; the even/odd laws recover
+both child positions using exactly the upstream parity premises, with no extra input bound or
+successful-call premise. Their arithmetic observations use `Nat`, not overflowing native products.
+The refusal laws establish exact `RustM.ok (.Err ...)` results: `depth(0)` returns `InvalidIndex`,
+whereas `length(1)` returns `RootHasNoBranch`; neither is a panic or a successful depth measurement.
 
-This table records **one explicit theorem transfer**, separately from the **12 proved public
+Each proof applies its pinned upstream theorem through existing operation refinements instead
+of independently reproving its arithmetic or unfolding the production operation. The current
+audit imports all seven properties and checks their axioms. The refinement gate runs
+[`tools/gindex-laws.lean`](../tools/gindex-laws.lean), which checks complete property signatures
+over actual extracted calls, including the sibling/parent composition, and boundary instantiations.
+It rejects wrong conclusions, opposite-parity premises and incorrect refusal categories.
+These property checks are separate from the 12 single-operation refinement registrations.
+
+This table records **seven explicit theorem transfers**, separately from the **12 proved public
 operations**. It is not a complete inventory of upstream theorems derivable from those operation
 refinements, nor a claim that every other upstream property is unavailable.
 

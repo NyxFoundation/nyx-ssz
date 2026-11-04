@@ -208,21 +208,10 @@ def check_proofs(targets, directory):
     legacy.run(["lake", "build", "NyxSszVerification.CurrentAudit"], cwd=VERIFICATION)
     lines = ["import NyxSszVerification.CurrentAudit"]
     lines.extend(f"check_current_refinement {row['lean']} via {row['proof']}" for row in targets)
-    lines.append("check_current_refinement NyxSszRust.gindex.sibling via "
-                 "NyxSszVerification.gindex_sibling_sibling")
-    # Check the wrong-result rejection without depending on Lean's diagnostic wording.
-    lines.extend([
-        "open Aeneas Aeneas.Std in",
-        "example : True := by",
-        "  fail_if_success",
-        "    have : (NyxSszRust.gindex.sibling 0#u128 >>= NyxSszRust.gindex.sibling) = "
-        "RustM.ok 1#u128 := by",
-        "      exact NyxSszVerification.gindex_sibling_sibling 0#u128",
-        "  trivial",
-    ])
     path = directory / "CurrentTargets.lean"
     path.write_text("\n".join(lines) + "\n")
     legacy.run(["lake", "env", "lean", path], cwd=VERIFICATION)
+    legacy.run(["lake", "env", "lean", ROOT / "tools" / "gindex-laws.lean"], cwd=VERIFICATION)
     guards = {
         "Unrelated": (f"check_current_refinement {targets[0]['lean']} via {targets[1]['proof']}\n", "does not mention"),
         "ForeignAxiom": ("namespace NyxSszVerification\naxiom current_forbidden : False\nend NyxSszVerification\naudit_current_refinements\n", "forbidden axiom"),
