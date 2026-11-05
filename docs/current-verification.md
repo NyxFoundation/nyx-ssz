@@ -1,6 +1,6 @@
 ---
 title: Current-source proof scope and explicit skips
-last_updated: 2026-10-27
+last_updated: 2026-11-05
 tags:
   - ssz
   - aeneas
@@ -32,6 +32,65 @@ Existing equivalence theorems over these definitions are rechecked by Lean's ker
 The audit binds every registered operation to its actual theorem and rejects foreign axioms,
 native-decision axioms and unrelated theorem registrations. Allowed foundational axioms remain
 `propext`, `Classical.choice` and `Quot.sound`, as in the existing audit.
+
+## Explicit upstream-property correspondences
+
+| Pinned ssz-specs theorem | Current Rust property theorem |
+| --- | --- |
+| [`Ssz.gindexSibling_sibling`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L14) | [`NyxSszVerification.gindex_sibling_sibling`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_half`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L45) | [`NyxSszVerification.gindex_sibling_half`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_parity`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L51) | [`NyxSszVerification.gindex_sibling_parity`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_even`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L63) | [`NyxSszVerification.gindex_sibling_even`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexSibling_odd`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L71) | [`NyxSszVerification.gindex_sibling_odd`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexDepth_zero`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L105) | [`NyxSszVerification.gindex_depth_zero`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexLength_root`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L100) | [`NyxSszVerification.gindex_length_root`](../verification/NyxSszVerification/Gindex/Laws.lean) |
+| [`Ssz.gindexBit_parity`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Gindex.lean#L85) | [`NyxSszVerification.gindex_bit_parity`](../verification/NyxSszVerification/Gindex/PathLaws.lean) |
+| [`Ssz.gindexConcat_root_right`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Type/PathLaws.lean#L41) | [`NyxSszVerification.gindex_concat_root_right`](../verification/NyxSszVerification/Gindex/PathLaws.lean) |
+| [`Ssz.gindexConcat_root_left`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Type/PathLaws.lean#L47) | [`NyxSszVerification.gindex_concat_root_left`](../verification/NyxSszVerification/Gindex/PathLaws.lean) |
+| [`Ssz.gindexConcat_positive`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Type/PathLaws.lean#L56) | [`NyxSszVerification.gindex_concat_positive`](../verification/NyxSszVerification/Gindex/PathLaws.lean) |
+| [`Ssz.gindexLength_ok`](https://github.com/ethereum/ssz-specs/blob/c68b96a852559284cc4311b6c14105bcf51ac6ce/lean/Ssz/Proofs/Merkle/Verify.lean#L92) | [`NyxSszVerification.gindex_length_ok`](../verification/NyxSszVerification/Gindex/PathLaws.lean) (derived correspondence; see below) |
+
+For every `u128` index, including zero, the root index and `u128::MAX`, two calls to
+production `gindex::sibling` succeed and return the original index. The extracted-program
+statement is the exact equality
+`(NyxSszRust.gindex.sibling index >>= NyxSszRust.gindex.sibling) = RustM.ok index`.
+There is no nonzero, representability or successful-call premise.
+
+The sibling/parent composition also succeeds for every `u128` and returns a parent whose
+natural-number value is `index / 2`. Sibling parity is complemented; the even/odd laws recover
+both child positions using exactly the upstream parity premises, with no extra input bound or
+successful-call premise. Their arithmetic observations use `Nat`, not overflowing native products.
+The refusal laws establish exact `RustM.ok (.Err ...)` results: `depth(0)` returns `InvalidIndex`,
+whereas `length(1)` returns `RootHasNoBranch`; neither is a panic or a successful depth measurement.
+
+The bit/parity identity succeeds for every `u128` index and every `u32` bit position, including
+positions at or above 128; no in-word position premise is added. Both concatenation identities
+return exact `RustM.ok (.Ok index)` results under precisely the upstream `1 ≤ index` premise,
+including `u128::MAX`. Positivity of a concatenated result and the branch-length property retain
+the upstream successful-result premises, expressed as actual Rust success. They add no separate
+representability assumption. Existing operation refinements continue to classify invalid indices
+and genuine native overflow; the property laws do not turn those refusals into success.
+
+Eleven proofs apply their pinned upstream theorems through existing operation refinements.
+The `gindex_length_ok` correspondence instead derives the same successful-measurement assertion
+from `gindex_length_refines`, `gindex_length_positive` and `index_depth_positive`: the returned
+depth equals `Nat.log2 index`, the index is positive, and the depth is nonzero. Directly importing
+upstream `Ssz.Proofs.Merkle.Verify` fails under the pinned Lean 4.31.0 in its unrelated
+`Ssz.Proofs.Merkle.Tree` dependency (a bind-containing equality remains unsimplified).
+The upstream toolchain is 4.33.1. No dependency sources, toolchain pins or axioms are changed;
+this row records a checked correspondence, not direct reuse of that upstream theorem's proof.
+
+The current audit imports all 12 properties and checks their axioms. The refinement gate runs
+[`tools/gindex-laws.lean`](../tools/gindex-laws.lean), which checks complete property signatures
+over actual extracted calls, including the sibling/parent composition, and boundary instantiations.
+It rejects wrong conclusions, invalid premises and incorrect refusal categories. Boundary fixtures
+also check maximum-index concatenation, zero-index refusal and native concatenation overflow.
+These property checks are separate from the 12 single-operation refinement registrations.
+
+This table records **12 explicit property correspondences** (11 direct theorem reuses and one
+separately derived correspondence), separately from the **12 proved public operations**. It is not
+a complete inventory of upstream properties derivable from those operation refinements, nor a
+claim that every other upstream property is unavailable.
 
 ## Explicitly unproved
 

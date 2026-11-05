@@ -211,6 +211,7 @@ def check_proofs(targets, directory):
     path = directory / "CurrentTargets.lean"
     path.write_text("\n".join(lines) + "\n")
     legacy.run(["lake", "env", "lean", path], cwd=VERIFICATION)
+    legacy.run(["lake", "env", "lean", ROOT / "tools" / "gindex-laws.lean"], cwd=VERIFICATION)
     guards = {
         "Unrelated": (f"check_current_refinement {targets[0]['lean']} via {targets[1]['proof']}\n", "does not mention"),
         "ForeignAxiom": ("namespace NyxSszVerification\naxiom current_forbidden : False\nend NyxSszVerification\naudit_current_refinements\n", "forbidden axiom"),

@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 import current_refinement as current
 
 
@@ -49,6 +49,31 @@ class CurrentRefinementTests(unittest.TestCase):
         scope = self.scope(); scope["proven"].append("nyx_ssz::unknown::function")
         with self.assertRaisesRegex(ValueError, "registered theorem"):
             current.current_targets(scope)
+
+    def test_should_check_transferred_laws_when_current_targets_pass(self):
+        rejected = subprocess.CompletedProcess([], 1, stdout="does not mention forbidden axiom", stderr="")
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(current.legacy, "run") as run, \
+                patch.object(current.subprocess, "run", return_value=rejected):
+            current.check_proofs(current.current_targets(self.scope()), Path(temporary))
+        fixture = current.ROOT / "tools" / "gindex-laws.lean"
+        self.assertIn(call(["lake", "env", "lean", fixture], cwd=current.VERIFICATION),
+                      run.call_args_list)
+
+    def test_should_fail_when_a_transferred_law_fixture_is_rejected(self):
+        fixture = current.ROOT / "tools" / "gindex-laws.lean"
+
+        def check(command, **_):
+            if Path(command[-1]) == fixture:
+                raise subprocess.CalledProcessError(1, command)
+
+        rejected = subprocess.CompletedProcess([], 1, stdout="does not mention forbidden axiom", stderr="")
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(current.legacy, "run", side_effect=check), \
+                patch.object(current.subprocess, "run", return_value=rejected) as rejection_guards:
+            with self.assertRaises(subprocess.CalledProcessError):
+                current.check_proofs(current.current_targets(self.scope()), Path(temporary))
+            rejection_guards.assert_not_called()
 
     def test_should_accept_only_the_recorded_aeneas_metadata_refusal(self):
         message = "Returns inside of nested loops are not supported yet type_info.rs PrePasses.ml, line 662"
